@@ -11,6 +11,7 @@ import { shopkeeper } from './routes/shopkeeper.ts';
 import { delivery } from './routes/delivery.ts';
 import { ops } from './routes/ops.ts';
 import { paymentsRouter, paymentWebhook } from './routes/payments.ts';
+import { onboarding } from './routes/onboarding.ts';
 import { connectMongo, closeMongo, mongoDb } from './db/mongodb.ts';
 import { rateLimit } from './middleware/rateLimit.ts';
 
@@ -49,6 +50,7 @@ app.get('/ready', (_req, res) => {
 app.get('/api/config', (_req, res) => res.json({ databaseConfigured: Boolean(process.env.MONGODB_URI), environment: process.env.NODE_ENV ?? 'development' }));
 app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 240 }));
 app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: 30 }), auth);
+app.use('/api/onboarding', rateLimit({ windowMs: 15 * 60 * 1000, max: 12 }), onboarding);
 app.use('/api', api);
 app.use('/api/bootstrap', bootstrap);
 app.use('/api/customer', customer);
@@ -64,7 +66,7 @@ app.get(/^(?!\/api(?:\/|$)).*/, (_req, res, next) => {
   return res.sendFile(path.join(frontendDist, 'index.html'), error => error && next(error));
 });
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
-app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => { console.error(error); res.status(500).json({ error: 'Internal server error' }); });
+app.use((error: unknown, _req, res, _next: express.NextFunction) => { console.error(error); res.status(500).json({ error: 'Internal server error' }); });
 
 async function start() {
   if (isProduction) {
