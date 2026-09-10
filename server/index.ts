@@ -6,6 +6,7 @@ import { auth } from './routes/auth';
 import { bootstrap } from './routes/bootstrap';
 import { admin } from './routes/admin';
 import { shopkeeper } from './routes/shopkeeper';
+import { delivery } from './routes/delivery';
 import { connectMongo, closeMongo } from './db/mongodb';
 
 const app = express();
@@ -18,6 +19,7 @@ app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   next();
 });
 app.use(express.json({ limit: '1mb' }));
@@ -30,6 +32,7 @@ app.use('/api/bootstrap', bootstrap);
 app.use('/api', api);
 app.use('/api/admin', admin);
 app.use('/api/shopkeeper', shopkeeper);
+app.use('/api/delivery', delivery);
 
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -47,7 +50,7 @@ async function start() {
     if (process.env.NODE_ENV === 'production') throw error;
   }
 
-  const server = app.listen(port, () => console.log(`FreshCart API listening on http://localhost:${port}`));
+  const server = app.listen(port, () => console.log(`FreshCart API listening on port ${port}`));
   const shutdown = async () => {
     server.close(async () => {
       await closeMongo();
