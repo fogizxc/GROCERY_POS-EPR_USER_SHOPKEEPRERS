@@ -3,7 +3,7 @@ import { addresses, deliverySlots, orders, payments, products, shops } from '../
 import type { Address, Payment } from '../models/catalog';
 import type { OrderStatus } from '../models/domain';
 import { requireAuth } from '../auth/middleware';
-import { listProducts, listShops, listAddresses, insertAddress, listDeliverySlots, createOrderTransaction, findOrders, updateOrderStatus } from '../db/repositories';
+import { listProducts, listShops, listAddresses, insertAddress, listDeliverySlots, createOrderTransaction, cancelOrderTransaction, findOrders, updateOrderStatus } from '../db/repositories';
 import { mongoDb } from '../db/mongodb';
 
 export const api = Router();
@@ -69,8 +69,10 @@ api.get('/orders', requireAuth, async (req, res) => {
 
 api.post('/orders', requireAuth, async (req, res) => {
   const { shopId, items, paymentMethod = 'COD', addressId, deliverySlotId } = req.body ?? {};
+  const idempotencyKey = req.header('Idempotency-Key')?.trim();
   if (req.user?.role !== 'customer') return res.status(403).json({ error: 'Only customers can place orders' });
   if (typeof shopId !== 'string' || !shopId.trim() || !Array.isArray(items) || !items.length || items.length > 100 || typeof addressId !== 'string' || typeof deliverySlotId !== 'string') return res.status(400).json({ error: 'shopId, 1-100 items, addressId and deliverySlotId are required' });
+  if (idempotencyKey && (idempotencyKey.length < 16 || idempotencyKey.length > 128)) return res.status(400).json({ error: 'Idempotency-Key must be between 16 and 128 characters' });
   if (!['UPI', 'CARD', 'COD'].includes(paymentMethod)) return res.status(400).json({ error: 'Invalid payment method' });
   const normalizedInput = items.map((raw: unknown) => {
     const item = raw as { productId?: unknown; quantity?: unknown };
@@ -80,12 +82,22 @@ api.post('/orders', requireAuth, async (req, res) => {
   });
   if (normalizedInput.some(item => !item.productId || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 100) || new Set(normalizedInput.map(item => item.productId)).size !== normalizedInput.length) return res.status(400).json({ error: 'Each product must have a unique integer quantity between 1 and 100' });
   if (mongoDb()) {
-    const address = await mongoDb()!.collection<Address>('addresses').findOne({ id: addressId, userId: req.user.id });
+    const db = mongoDb()!;
+    if (idempotencyKey) {
+      const existing = await db.collection<import('../models/domain').Order>('orders').findOne({ customerId: req.user.id, idempotencyKey });
+      if (existing) {
+        const payment = await db.collection<Payment>('payments').findOne({ orderId: existing.id });
+        const address = await db.collection<Address>('addresses').findOne({ id: addressId, userId: req.user.id });
+        const slot = existing.deliverySlotId ? await db.collection<import('../models/catalog').DeliverySlot>('deliverySlots').findOne({ id: existing.deliverySlotId }) : null;
+        return res.status(200).json({ ...existing, ...(address ? { address } : {}), ...(slot ? { deliverySlot: slot } : {}), ...(payment ? { payment } : {}) });
+      }
+    }
+    const address = await db.collection<Address>('addresses').findOne({ id: addressId, userId: req.user.id });
     if (!address) return res.status(400).json({ error: 'Valid delivery address is required' });
     const orderId = `FC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const orderItems = normalizedInput.map(item => ({ productId: item.productId, name: '', quantity: item.quantity, unitPrice: 0 }));
-    const order = { id: orderId, customerId: req.user.id, shopId: shopId.trim(), items: orderItems, subtotal: 0, deliveryFee: 0, total: 0, paymentMethod: paymentMethod as 'UPI' | 'CARD' | 'COD', status: 'PLACED' as const, createdAt: new Date().toISOString() };
-    const dbProducts = await mongoDb()!.collection<import('../models/domain').Product>('products').find({ id: { $in: normalizedInput.map(item => item.productId) }, shopId: order.shopId, active: true }).toArray();
+    const order = { id: orderId, customerId: req.user.id, shopId: shopId.trim(), items: orderItems, subtotal: 0, deliveryFee: 0, total: 0, paymentMethod: paymentMethod as 'UPI' | 'CARD' | 'COD', status: 'PLACED' as const, createdAt: new Date().toISOString(), deliverySlotId, ...(idempotencyKey ? { idempotencyKey } : {}) };
+    const dbProducts = await db.collection<import('../models/domain').Product>('products').find({ id: { $in: normalizedInput.map(item => item.productId) }, shopId: order.shopId, active: true }).toArray();
     if (dbProducts.length !== normalizedInput.length) return res.status(400).json({ error: 'One or more products are unavailable' });
     const orderProductMap = new Map(dbProducts.map(product => [product.id, product]));
     const completeItems = normalizedInput.map(item => { const product = orderProductMap.get(item.productId)!; return { productId: product.id, name: product.name, quantity: item.quantity, unitPrice: product.sellingPrice }; });
@@ -97,6 +109,10 @@ api.post('/orders', requireAuth, async (req, res) => {
       const result = await createOrderTransaction(order, payment, normalizedInput, deliverySlotId);
       return res.status(201).json({ ...result.order, address, deliverySlot: result.slot, payment: result.payment });
     } catch (error) {
+      if (idempotencyKey && error instanceof Error && /duplicate key/i.test(error.message)) {
+        const existing = await db.collection<import('../models/domain').Order>('orders').findOne({ customerId: req.user.id, idempotencyKey });
+        if (existing) return res.status(200).json(existing);
+      }
       return res.status(400).json({ error: error instanceof Error ? error.message : 'Unable to place order' });
     }
   }
@@ -108,7 +124,7 @@ api.post('/orders', requireAuth, async (req, res) => {
   if (normalizedItems.some(item => item === null)) return res.status(400).json({ error: 'One or more products are unavailable or have insufficient stock' });
   const orderItems = normalizedItems.map(item => ({ productId: item!.product.id, name: item!.product.name, quantity: item!.quantity, unitPrice: item!.product.sellingPrice }));
   const subtotal = orderItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0); const deliveryFee = subtotal >= 499 ? 0 : 39;
-  const order = { id: `FC-${Date.now()}-${orders.length}`, customerId: req.user.id, shopId, items: orderItems, subtotal, deliveryFee, total: subtotal + deliveryFee, paymentMethod: paymentMethod as 'UPI' | 'CARD' | 'COD', status: 'PLACED' as const, createdAt: new Date().toISOString() };
+  const order = { id: `FC-${Date.now()}-${orders.length}`, customerId: req.user.id, shopId, items: orderItems, subtotal, deliveryFee, total: subtotal + deliveryFee, paymentMethod: paymentMethod as 'UPI' | 'CARD' | 'COD', status: 'PLACED' as const, createdAt: new Date().toISOString(), deliverySlotId };
   orderItems.forEach(item => { const product = products.find(p => p.id === item.productId); if (product) product.stock -= item.quantity; }); slot.booked += 1; orders.unshift(order);
   const payment: Payment = { id: `pay-${Date.now()}`, orderId: order.id, method: order.paymentMethod, status: 'PENDING', amount: order.total, provider: order.paymentMethod === 'COD' ? undefined : 'pending', createdAt: new Date().toISOString() }; payments.push(payment);
   return res.status(201).json({ ...order, address, deliverySlot: slot, payment });
@@ -121,13 +137,30 @@ api.patch('/orders/:id/status', requireAuth, async (req, res) => {
   if (mongoDb()) {
     const order = await mongoDb()!.collection<import('../models/domain').Order>('orders').findOne({ id: req.params.id });
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    const isAdmin = req.user?.role === 'admin' || req.user?.role === 'super_admin'; const canManage = isAdmin || (['shopkeeper', 'employee', 'store_manager'].includes(req.user?.role ?? '') && req.user?.shopId === order.shopId);
-    if (!canManage && !(req.user?.role === 'customer' && req.user.id === order.customerId && status === 'CANCELLED')) return res.status(403).json({ error: 'Insufficient permissions' });
+    const isAdmin = req.user?.role === 'admin' || req.user?.role === 'super_admin';
+    const canManage = isAdmin || (['shopkeeper', 'employee', 'store_manager'].includes(req.user?.role ?? '') && req.user?.shopId === order.shopId);
+    if (status === 'CANCELLED') {
+      if (!canManage && !(req.user?.role === 'customer' && req.user.id === order.customerId)) return res.status(403).json({ error: 'Insufficient permissions' });
+      if (order.status === 'CANCELLED') return res.json(order);
+      if (!['PLACED', 'ACCEPTED'].includes(order.status)) return res.status(409).json({ error: 'Order can no longer be cancelled' });
+      try { const cancelled = await cancelOrderTransaction(order.id); return res.json(cancelled); }
+      catch (error) { return res.status(409).json({ error: error instanceof Error ? error.message : 'Unable to cancel order' }); }
+    }
+    if (!canManage) return res.status(403).json({ error: 'Insufficient permissions' });
     const updated = await updateOrderStatus(order.id, status); return res.json(updated);
   }
   const order = orders.find(o => o.id === req.params.id); if (!order) return res.status(404).json({ error: 'Order not found' });
   const isAdmin = req.user?.role === 'admin' || req.user?.role === 'super_admin'; const canManage = isAdmin || (['shopkeeper', 'employee', 'store_manager'].includes(req.user?.role ?? '') && req.user?.shopId === order.shopId);
-  if (!canManage && !(req.user?.role === 'customer' && req.user.id === order.customerId && status === 'CANCELLED')) return res.status(403).json({ error: 'Insufficient permissions' }); order.status = status; return res.json(order);
+  if (status === 'CANCELLED') {
+    if (!canManage && !(req.user?.role === 'customer' && req.user.id === order.customerId)) return res.status(403).json({ error: 'Insufficient permissions' });
+    if (order.status === 'CANCELLED') return res.json(order);
+    if (!['PLACED', 'ACCEPTED'].includes(order.status)) return res.status(409).json({ error: 'Order can no longer be cancelled' });
+    order.items.forEach(item => { const product = products.find(p => p.id === item.productId && p.shopId === order.shopId); if (product) product.stock += item.quantity; });
+    const slot = deliverySlots.find(item => item.id === order.deliverySlotId); if (slot && slot.booked > 0) slot.booked -= 1;
+    const payment = payments.find(item => item.orderId === order.id); if (payment) payment.status = order.paymentMethod === 'COD' ? 'CANCELLED' : 'REFUND_PENDING';
+    order.status = 'CANCELLED'; return res.json(order);
+  }
+  if (!canManage) return res.status(403).json({ error: 'Insufficient permissions' }); order.status = status; return res.json(order);
 });
 
 api.patch('/products/:id/stock', requireAuth, async (req, res) => {
