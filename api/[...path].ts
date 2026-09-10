@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { app } from '../server/index';
-import { connectMongo } from '../server/db/mongodb';
+import { app } from '../server/index.ts';
+import { connectMongo } from '../server/db/mongodb.ts';
 
 let mongoReady: Promise<unknown> | null = null;
 
@@ -14,9 +14,6 @@ export default async function handler(req: Request, res: Response) {
     }
     await mongoReady;
 
-    // Vercel may invoke a catch-all function with the function prefix removed.
-    // Express routes in FreshCart are mounted under /api, so normalize the URL
-    // before handing the request to the Express application.
     if (!req.url.startsWith('/api')) {
       req.url = `/api${req.url.startsWith('/') ? req.url : `/${req.url}`}`;
     }
