@@ -41,6 +41,7 @@ app.use((_req, res, next) => {
 app.use('/api/payments/webhook', express.raw({ type: 'application/json', limit: '1mb' }), paymentWebhook);
 app.use(express.json({ limit: '1mb' }));
 app.get('/health', (_req, res) => res.status(200).json({ status: 'ok', service: 'freshcart-api' }));
+app.get('/api', (_req, res) => res.status(200).json({ ok: true, service: 'freshcart-api', message: 'API is running' }));
 app.get('/ready', (_req, res) => {
   const ready = Boolean(mongoDb());
   return res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready', database: ready ? 'connected' : 'disconnected' });
@@ -59,7 +60,7 @@ app.use('/api/payments', paymentsRouter);
 
 const frontendDist = path.resolve(process.cwd(), 'dist');
 app.use(express.static(frontendDist, { index: 'index.html', maxAge: isProduction ? '1d' : 0 }));
-app.get(/^(?!\/api(?:\/|$)).*/, (req, res, next) => {
+app.get(/^(?!\/api(?:\/|$)).*/, (_req, res, next) => {
   return res.sendFile(path.join(frontendDist, 'index.html'), error => error && next(error));
 });
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
