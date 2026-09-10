@@ -1,5 +1,6 @@
 import { FormEvent, useState } from 'react';
-import { ArrowRight, Eye, EyeOff, Facebook, Instagram, Leaf, Linkedin, LockKeyhole, Mail, MessageCircle, Phone, UserRound, Youtube } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, Facebook, Instagram, Leaf, Linkedin, LockKeyhole, Mail, MessageCircle, Phone, Store, UserRound, Youtube } from 'lucide-react';
+import { PartnerApplicationModal } from './PartnerApplicationModal';
 import { api } from '../services/api';
 
 interface AuthScreenProps { onAuthenticated: () => void; }
@@ -14,6 +15,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [partnerType, setPartnerType] = useState<'shopkeeper' | 'employee' | null>(null);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -69,8 +71,10 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               <button disabled={saving} className="flex w-full items-center justify-center rounded-2xl bg-[#173d2e] px-5 py-3.5 text-sm font-extrabold text-white transition hover:bg-[#24523e] disabled:opacity-50">{saving?'Please wait…':mode==='login'?'Sign in securely':'Create customer account'}{!saving&&<ArrowRight size={16} className="ml-2"/>}</button>
             </form>
 
-            <div className="mt-auto pt-10">
-              <div className="flex items-center justify-center gap-2">
+            <div className="mt-auto pt-8">
+              <div className="rounded-2xl border border-[#e8ede7] bg-[#fbfcfa] p-3.5"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-[#819087]">Join FreshCart</p><p className="mt-1 text-xs font-semibold text-[#4f6258]">Build your business or career with us</p></div><Store size={18} className="text-[#4c8b67]"/></div><div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={()=>setPartnerType('shopkeeper')} className="rounded-xl border border-[#d8e3d9] bg-white px-3 py-2.5 text-xs font-extrabold text-[#315b43] transition hover:-translate-y-0.5 hover:border-[#9abd9e] hover:bg-[#f4f8f2]">Shopkeeper / Store</button><button type="button" onClick={()=>setPartnerType('employee')} className="rounded-xl border border-[#d8e3d9] bg-white px-3 py-2.5 text-xs font-extrabold text-[#315b43] transition hover:-translate-y-0.5 hover:border-[#9abd9e] hover:bg-[#f4f8f2]">Employee / Delivery</button></div></div>
+
+              <div className="mt-4 flex items-center justify-center gap-2">
                 <a href="#" aria-label="YouTube" title="YouTube" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]"><Youtube size={14}/></a>
                 <a href="#" aria-label="Instagram" title="Instagram" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]"><Instagram size={14}/></a>
                 <a href="#" aria-label="Facebook" title="Facebook" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]"><Facebook size={14}/></a>
@@ -85,6 +89,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           </div>
         </section>
       </div>
+      {partnerType && <PartnerApplicationModal type={partnerType} onClose={()=>setPartnerType(null)} />}
     </main>
   );
 }
