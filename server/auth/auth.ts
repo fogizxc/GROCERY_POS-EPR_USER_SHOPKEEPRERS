@@ -6,15 +6,22 @@ import { verifyPassword } from './password.ts';
 
 export interface Session { token: string; user: User; expiresAt: number; }
 
-export async function signIn(identifier: string, role: Role, password?: string): Promise<Session | null> {
+const loginRoles: Role[] = ['customer', 'shopkeeper', 'employee', 'store_manager', 'admin', 'super_admin'];
+
+export async function signIn(identifier: string, password?: string): Promise<Session | null> {
   const normalized = identifier.trim().toLowerCase();
-  const mongoUser = await findUser(normalized, role);
-  const user = mongoUser ?? users.find(u => u.active && (u.email.toLowerCase() === normalized || u.phone === identifier.trim()) && u.role === role);
+  const matches = await Promise.all(loginRoles.map(role => findUser(normalized, role)));
+  let user = matches.find(Boolean) as User | null;
+  if (!user) {
+    user = users.find(u => u.active && (u.email.toLowerCase() === normalized || u.phone === identifier.trim())) ?? null;
+  }
   if (!user) return null;
+
   const production = process.env.NODE_ENV === 'production';
   if (production || user.passwordHash) {
     if (!password || !user.passwordHash || !verifyPassword(password, user.passwordHash)) return null;
   }
+
   const token = signToken(user);
   return { token, user: { ...user, passwordHash: undefined }, expiresAt: Date.now() + 1000 * 60 * 60 * 12 };
 }
