@@ -6,7 +6,7 @@ import { auth } from './routes/auth';
 import { bootstrap } from './routes/bootstrap';
 import { admin } from './routes/admin';
 import { shopkeeper } from './routes/shopkeeper';
-import { connectMongo, closeMongo, mongoDb } from './db/mongodb';
+import { connectMongo, closeMongo } from './db/mongodb';
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
