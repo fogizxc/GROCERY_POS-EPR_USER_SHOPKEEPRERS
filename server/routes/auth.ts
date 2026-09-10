@@ -35,5 +35,15 @@ auth.post('/register', async (req, res) => {
   } catch (error) { console.error(error); return res.status(503).json({ error: 'Unable to create account' }); }
 });
 
-auth.get('/me', async (req, res) => { try { const token = req.header('authorization')?.replace(/^Bearer\s+/i, ''); const session = await getSession(token); return session ? res.json(publicUser(session.user)) : res.status(401).json({ error: 'Authentication required' }); } catch (error) { console.error(error); return res.status(503).json({ error: 'Authentication service unavailable' }); } });
+auth.get('/me', async (req, res) => {
+  try {
+    const authorization = typeof req.headers?.authorization === 'string' ? req.headers.authorization : undefined;
+    const token = authorization?.replace(/^Bearer\s+/i, '');
+    const session = await getSession(token);
+    return session ? res.json(publicUser(session.user)) : res.status(401).json({ error: 'Authentication required' });
+  } catch (error) {
+    console.error(error);
+    return res.status(503).json({ error: 'Authentication service unavailable' });
+  }
+});
 auth.post('/logout', (_req, res) => res.status(204).send());
