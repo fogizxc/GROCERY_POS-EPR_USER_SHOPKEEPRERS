@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
@@ -22,6 +22,13 @@ function readRoleFromToken(): SessionRole {
 
 function AppGate() {
   const [authenticated, setAuthenticated] = useState(() => Boolean(localStorage.getItem('freshcart_token')));
+
+  useEffect(() => {
+    // Exercise the deployed API on every page load. This gives Vercel a safe,
+    // dependency-light request and verifies the same-origin API function before
+    // the user attempts authentication or other protected operations.
+    void fetch('/api/health', { cache: 'no-store' }).catch(() => undefined);
+  }, []);
 
   if (!authenticated) {
     return <AuthScreen onAuthenticated={() => { localStorage.setItem('freshcart_role', readRoleFromToken()); setAuthenticated(true); }} />;
