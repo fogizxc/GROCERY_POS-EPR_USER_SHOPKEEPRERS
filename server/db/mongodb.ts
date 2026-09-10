@@ -1,5 +1,5 @@
 import { MongoClient, Db } from 'mongodb';
-import { ensureIndexes } from './schema';
+import { ensureIndexes } from './schema.ts';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
