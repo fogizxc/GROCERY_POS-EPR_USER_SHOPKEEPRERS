@@ -45,4 +45,15 @@ for (const file of walk(root)) {
   }
 }
 
+const appPath = path.resolve('src/App.tsx');
+if (fs.existsSync(appPath)) {
+  const original = fs.readFileSync(appPath, 'utf8');
+  const oldBootstrap = "useEffect(()=>{let alive=true;(async()=>{try{await api.me();const [p,s,o]=await Promise.all([api.products(),api.shops(),role==='customer'?api.customerOrders():api.orders()]);if(alive){setProducts(p);setShops(s);setOrders(o)}}catch(error){if(localStorage.getItem('freshcart_token')){localStorage.removeItem('freshcart_token');localStorage.removeItem('freshcart_role');window.location.reload();}else if(alive)flash(error instanceof Error?error.message:'Unable to connect to FreshCart API')}finally{if(alive)setLoading(false)}})();return()=>{alive=false}},[role]);";
+  const newBootstrap = "useEffect(()=>{let alive=true;(async()=>{try{await api.me();const [p,s,o]=await Promise.all([api.products().catch(()=>[]),api.shops().catch(()=>[]),role==='customer'?api.customerOrders().catch(()=>[]):api.orders().catch(()=>[])]);if(alive){setProducts(p);setShops(s);setOrders(o)}}catch(error){const message=error instanceof Error?error.message:'Unable to connect to FreshCart API';const authFailure=/Authentication required|Invalid credentials|token|401/i.test(message);if(authFailure){localStorage.removeItem('freshcart_token');localStorage.removeItem('freshcart_role');window.location.reload();}else if(alive){console.error('FreshCart bootstrap failed:',error);flash('You are signed in, but some FreshCart data is temporarily unavailable.')}}finally{if(alive)setLoading(false)}})();return()=>{alive=false}},[role]);";
+  if (original.includes(oldBootstrap) && !original.includes("console.error('FreshCart bootstrap failed:',error)")) {
+    fs.writeFileSync(appPath, original.replace(oldBootstrap, newBootstrap));
+    console.log('FreshCart Vercel preparation: protected authenticated sessions from non-auth bootstrap failures.');
+  }
+}
+
 console.log(`FreshCart Vercel preparation: normalized runtime imports and request headers in ${changedFiles} server file(s).`);
