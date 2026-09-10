@@ -4,6 +4,7 @@ import type { Address, DeliverySlot, Payment, DeliveryAssignment, Notification, 
 import { mongoClient, mongoDb } from './mongodb';
 
 export async function findUser(identifier: string, role: string) { const db = mongoDb(); return db ? db.collection<User>('users').findOne({ $or: [{ email: identifier }, { phone: identifier }], role, active: true }) : null; }
+export async function findUserById(id: string) { const db = mongoDb(); return db ? db.collection<User>('users').findOne({ id, active: true }, { projection: { passwordHash: 0 } }) : null; }
 export async function createUser(user: User) { const db = mongoDb(); if (!db) return; await db.collection<User>('users').insertOne(user); }
 export async function listProducts(shopId?: string, category?: string, q?: string) { const db = mongoDb(); if (!db) return []; const filter: Filter<Product> = { active: true, ...(shopId ? { shopId } : {}), ...(category ? { category } : {}) }; if (q) filter.$text = { $search: q }; return db.collection<Product>('products').find(filter).toArray(); }
 export async function listShops() { const db = mongoDb(); return db ? db.collection<Shop>('shops').find({ active: true }).toArray() : []; }
