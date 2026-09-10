@@ -1,14 +1,18 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { Role } from '../models/domain';
-import { getSession } from './auth';
+import { getUserFromToken } from './auth';
 
-declare global { namespace Express { interface Request { user?: import('../models/domain').User } } }
+declare global {
+  namespace Express {
+    interface Request { user?: import('../models/domain').User }
+  }
+}
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const token = req.header('authorization')?.replace(/^Bearer\s+/i, '');
-  const session = getSession(token);
-  if (!session) return res.status(401).json({ error: 'Authentication required' });
-  req.user = session.user;
+  const user = getUserFromToken(token);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+  req.user = user;
   next();
 }
 
