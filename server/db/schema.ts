@@ -12,6 +12,7 @@ export async function ensureIndexes(client: MongoClient) {
     db.collection('orders').createIndex({ customerId: 1, createdAt: -1 }),
     db.collection('orders').createIndex({ shopId: 1, status: 1, createdAt: -1 }),
     db.collection('orders').createIndex({ 'items.productId': 1, createdAt: -1 }),
+    db.collection('orders').createIndex({ customerId: 1, idempotencyKey: 1 }, { unique: true, sparse: true }),
     db.collection('addresses').createIndex({ userId: 1, isDefault: -1 }),
     db.collection('wishlist').createIndex({ userId: 1, productId: 1 }, { unique: true }),
     db.collection('offers').createIndex({ code: 1 }, { unique: true }),
