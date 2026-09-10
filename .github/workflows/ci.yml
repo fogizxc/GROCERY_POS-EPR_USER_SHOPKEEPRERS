@@ -19,7 +19,7 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '20.19.5'
+          node-version: '22'
           package-manager-cache: false
       - name: Verify toolchain
         run: node --version && npm --version
