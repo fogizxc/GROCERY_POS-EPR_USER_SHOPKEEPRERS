@@ -4,6 +4,9 @@
   "version": "0.3.0",
   "description": "FreshCart grocery ecommerce and shopkeeper ERP platform",
   "type": "module",
+  "engines": {
+    "node": ">=22 <23"
+  },
   "scripts": {
     "dev": "vite",
     "server": "tsx server/index.ts",
