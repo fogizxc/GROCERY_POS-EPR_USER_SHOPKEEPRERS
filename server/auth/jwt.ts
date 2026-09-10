@@ -27,7 +27,8 @@ export function verifyToken(token: string) {
     const expected = crypto.createHmac('sha256', secret()).update(`${header}.${payload}`).digest('base64url');
     if (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
-    if (!data.exp || data.exp < Math.floor(Date.now() / 1000)) return null;
+    if (data?.exp === undefined || data.exp < Math.floor(Date.now() / 1000)) return null;
+    if (typeof data.sub !== 'string' || typeof data.role !== 'string') return null;
     return data as { sub: string; role: User['role']; shopId?: string; exp: number };
   } catch {
     return null;
