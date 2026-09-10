@@ -2,18 +2,21 @@ import type { Role, User } from '../models/domain';
 import { users } from '../store/memoryStore';
 import { findUser } from '../db/repositories';
 import { signToken, verifyToken } from './jwt';
+import { verifyPassword } from './password';
 
 export interface Session { token: string; user: User; expiresAt: number; }
 
-export async function signIn(identifier: string, role: Role): Promise<Session | null> {
+export async function signIn(identifier: string, role: Role, password?: string): Promise<Session | null> {
   const normalized = identifier.trim().toLowerCase();
   const mongoUser = await findUser(normalized, role);
-  const user = mongoUser ?? users.find(
-    u => u.active && (u.email.toLowerCase() === normalized || u.phone === identifier.trim()) && u.role === role,
-  );
+  const user = mongoUser ?? users.find(u => u.active && (u.email.toLowerCase() === normalized || u.phone === identifier.trim()) && u.role === role);
   if (!user) return null;
+  const production = process.env.NODE_ENV === 'production';
+  if (production || user.passwordHash) {
+    if (!password || !user.passwordHash || !verifyPassword(password, user.passwordHash)) return null;
+  }
   const token = signToken(user);
-  return { token, user, expiresAt: Date.now() + 1000 * 60 * 60 * 12 };
+  return { token, user: { ...user, passwordHash: undefined }, expiresAt: Date.now() + 1000 * 60 * 60 * 12 };
 }
 
 export async function getUserFromToken(token?: string) {
@@ -21,8 +24,9 @@ export async function getUserFromToken(token?: string) {
   const claims = verifyToken(token);
   if (!claims) return null;
   const dbUser = await findUser(claims.sub, claims.role);
-  if (dbUser) return dbUser;
-  return users.find(u => u.active && u.id === claims.sub && u.role === claims.role) ?? null;
+  if (dbUser) return { ...dbUser, passwordHash: undefined };
+  const user = users.find(u => u.active && u.id === claims.sub && u.role === claims.role);
+  return user ? { ...user, passwordHash: undefined } : null;
 }
 
 export async function getSession(token?: string): Promise<Session | null> {
@@ -33,6 +37,4 @@ export async function getSession(token?: string): Promise<Session | null> {
   return { token, user, expiresAt: claims.exp * 1000 };
 }
 
-export function signOut(_token?: string) {
-  // JWT access tokens are stateless; clients discard the token on logout.
-}
+export function signOut(_token?: string) {}
