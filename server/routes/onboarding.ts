@@ -44,6 +44,26 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const gstinPattern = /^[0-9A-Z]{15}$/;
 const panPattern = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
+async function syncToGoogleSheet(application: PartnerApplication) {
+  const webhookUrl = process.env.GOOGLE_SHEETS_WEBHOOK_URL?.trim();
+  if (!webhookUrl) return;
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(application),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`Google Sheet webhook returned ${response.status}${text ? `: ${text.slice(0, 180)}` : ''}`);
+    }
+  } catch (error) {
+    console.error('FreshCart Google Sheet sync failed:', error);
+  }
+}
+
 onboarding.post('/applications', async (req, res) => {
   const body = req.body ?? {};
   const type = body.type as PartnerApplicationType;
@@ -111,9 +131,9 @@ onboarding.post('/applications', async (req, res) => {
     if (db) {
       await db.collection<PartnerApplication>('onboardingApplications').insertOne(application);
     } else {
-      // Development fallback: the submission still returns a real reference, but persistent storage needs MongoDB.
       console.log('FreshCart onboarding application received:', application.referenceId);
     }
+    void syncToGoogleSheet(application);
     return res.status(201).json({ referenceId: application.referenceId, scheduledCallAt: application.preferredCallAt, status: application.status });
   } catch (error) {
     console.error('FreshCart onboarding application failed:', error);
