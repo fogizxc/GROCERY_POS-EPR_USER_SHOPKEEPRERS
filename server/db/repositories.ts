@@ -44,6 +44,32 @@ export async function createOrderTransaction(order: Order, payment: Payment, ite
   } finally { await session.endSession(); }
 }
 
+export async function cancelOrderTransaction(orderId: string) {
+  const db = mongoDb(); const client = mongoClient();
+  if (!db || !client) throw new Error('MongoDB is not connected');
+  const session = client.startSession();
+  try {
+    let cancelled: Order | null = null;
+    await session.withTransaction(async () => {
+      const order = await db.collection<Order>('orders').findOne({ id: orderId }, { session });
+      if (!order) throw new Error('Order not found');
+      if (order.status === 'CANCELLED') { cancelled = order; return; }
+      if (order.status === 'PICKING' || order.status === 'PACKING' || order.status === 'READY' || order.status === 'OUT_FOR_DELIVERY' || order.status === 'DELIVERED') throw new Error('Order can no longer be cancelled');
+      for (const item of order.items) {
+        await db.collection<Product>('products').updateOne({ id: item.productId, shopId: order.shopId }, { $inc: { stock: item.quantity } }, { session });
+      }
+      if (order.deliverySlotId) {
+        await db.collection<DeliverySlot>('deliverySlots').updateOne({ id: order.deliverySlotId, booked: { $gt: 0 } }, { $inc: { booked: -1 } }, { session });
+      }
+      const paymentStatus = order.paymentMethod === 'COD' ? 'CANCELLED' : 'REFUND_PENDING';
+      await db.collection<Payment>('payments').updateOne({ orderId: order.id }, { $set: { status: paymentStatus } }, { session });
+      cancelled = await db.collection<Order>('orders').findOneAndUpdate({ id: order.id, status: { $in: ['PLACED', 'ACCEPTED'] } }, { $set: { status: 'CANCELLED' } }, { returnDocument: 'after', session });
+      if (!cancelled) throw new Error('Order changed while cancellation was in progress');
+    });
+    return cancelled;
+  } finally { await session.endSession(); }
+}
+
 export async function insertOrder(order: Order) { const db = mongoDb(); if (db) await db.collection<Order>('orders').insertOne(order); }
 export async function insertPayment(payment: Payment) { const db = mongoDb(); if (db) await db.collection<Payment>('payments').insertOne(payment); }
 export async function findOrders(filter: Filter<Order> = {}) { const db = mongoDb(); return db ? db.collection<Order>('orders').find(filter).sort({ createdAt: -1 }).toArray() : []; }
