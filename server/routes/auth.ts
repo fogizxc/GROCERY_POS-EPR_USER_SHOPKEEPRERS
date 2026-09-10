@@ -1,13 +1,12 @@
 import { Router } from 'express';
-import type { Role, User } from '../models/domain';
-import { users } from '../store/memoryStore';
-import { createUser } from '../db/repositories';
-import { getSession, signIn } from '../auth/auth';
-import { hashPassword, isStrongPassword } from '../auth/password';
+import type { Role, User } from '../models/domain.ts';
+import { users } from '../store/memoryStore.ts';
+import { createUser, findUser } from '../db/repositories.ts';
+import { getSession, signIn } from '../auth/auth.ts';
+import { hashPassword, isStrongPassword } from '../auth/password.ts';
 
 export const auth = Router();
 const roles: Role[] = ['customer', 'shopkeeper', 'employee', 'store_manager', 'admin', 'super_admin'];
-
 const publicUser = (user: User) => { const { passwordHash: _passwordHash, ...safe } = user; return safe; };
 
 auth.post('/login', async (req, res) => {
@@ -26,7 +25,7 @@ auth.post('/register', async (req, res) => {
   if (!isStrongPassword(password)) return res.status(400).json({ error: 'Password must be 8-128 characters and contain letters and numbers' });
   const normalizedEmail = email.trim().toLowerCase(); const normalizedPhone = phone.trim();
   try {
-    const existingMongo = await import('../db/repositories').then(r => Promise.all([r.findUser(normalizedEmail, 'customer'), r.findUser(normalizedPhone, 'customer')]));
+    const existingMongo = await Promise.all([findUser(normalizedEmail, 'customer'), findUser(normalizedPhone, 'customer')]);
     if (existingMongo.some(Boolean) || users.some(u => u.active && (u.email.toLowerCase() === normalizedEmail || u.phone === normalizedPhone))) return res.status(409).json({ error: 'An account with this email or phone already exists' });
     const user: User = { id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: name.trim(), email: normalizedEmail, phone: normalizedPhone, role: 'customer', active: true, passwordHash: hashPassword(password) };
     if (process.env.MONGODB_URI) await createUser(user); else users.push(user);
