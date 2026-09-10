@@ -59,8 +59,7 @@ app.use('/api/payments', paymentsRouter);
 
 const frontendDist = path.resolve(process.cwd(), 'dist');
 app.use(express.static(frontendDist, { index: 'index.html', maxAge: isProduction ? '1d' : 0 }));
-app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api/')) return next();
+app.get(/^(?!\/api(?:\/|$)).*/, (req, res, next) => {
   return res.sendFile(path.join(frontendDist, 'index.html'), error => error && next(error));
 });
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
