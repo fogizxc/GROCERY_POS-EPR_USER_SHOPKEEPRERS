@@ -1,7 +1,15 @@
 import crypto from 'node:crypto';
 import type { User } from '../models/domain';
 
-const secret = () => process.env.JWT_SECRET || 'development-only-change-me';
+function secret() {
+  const value = process.env.JWT_SECRET?.trim();
+  if (!value || value.length < 32) {
+    if (process.env.NODE_ENV === 'production') throw new Error('JWT_SECRET must be set to at least 32 characters in production');
+    return 'development-only-change-me-development-secret-32';
+  }
+  return value;
+}
+
 const b64 = (value: string | Buffer) => Buffer.from(value).toString('base64url');
 
 export function signToken(user: User) {
@@ -13,11 +21,15 @@ export function signToken(user: User) {
 }
 
 export function verifyToken(token: string) {
-  const [header, payload, signature] = token.split('.');
-  if (!header || !payload || !signature) return null;
-  const expected = crypto.createHmac('sha256', secret()).update(`${header}.${payload}`).digest('base64url');
-  if (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
-  const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
-  if (!data.exp || data.exp < Math.floor(Date.now() / 1000)) return null;
-  return data as { sub: string; role: User['role']; shopId?: string; exp: number };
+  try {
+    const [header, payload, signature] = token.split('.');
+    if (!header || !payload || !signature) return null;
+    const expected = crypto.createHmac('sha256', secret()).update(`${header}.${payload}`).digest('base64url');
+    if (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    if (!data.exp || data.exp < Math.floor(Date.now() / 1000)) return null;
+    return data as { sub: string; role: User['role']; shopId?: string; exp: number };
+  } catch {
+    return null;
+  }
 }
