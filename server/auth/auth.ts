@@ -1,6 +1,6 @@
 import type { Role, User } from '../models/domain.ts';
 import { users } from '../store/memoryStore.ts';
-import { findUser } from '../db/repositories.ts';
+import { findUser, findUserById } from '../db/repositories.ts';
 import { signToken, verifyToken } from './jwt.ts';
 import { verifyPassword } from './password.ts';
 
@@ -23,8 +23,8 @@ export async function getUserFromToken(token?: string) {
   if (!token) return null;
   const claims = verifyToken(token);
   if (!claims) return null;
-  const dbUser = await findUser(claims.sub, claims.role);
-  if (dbUser) return { ...dbUser, passwordHash: undefined };
+  const dbUser = await findUserById(claims.sub);
+  if (dbUser && dbUser.role === claims.role) return { ...dbUser, passwordHash: undefined };
   const user = users.find(u => u.active && u.id === claims.sub && u.role === claims.role);
   return user ? { ...user, passwordHash: undefined } : null;
 }
