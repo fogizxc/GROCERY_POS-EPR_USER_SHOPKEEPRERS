@@ -9,12 +9,30 @@ function credentials() {
   return { keyId, keySecret };
 }
 
+async function razorpayRequest<T>(path: string) {
+  const { keyId, keySecret } = credentials();
+  const response = await fetch(`${RAZORPAY_BASE_URL}${path}`, { headers: { Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}` } });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Razorpay request failed (${response.status}): ${body.slice(0, 300)}`);
+  }
+  return response.json() as Promise<T>;
+}
+
 export interface RazorpayOrder {
   id: string;
   amount: number;
   currency: string;
   receipt: string;
   status: string;
+}
+
+export interface RazorpayPayment {
+  id: string;
+  order_id: string;
+  amount: number;
+  currency: string;
+  status: 'created' | 'authorized' | 'captured' | 'refunded' | 'failed';
 }
 
 export async function createRazorpayOrder(input: { amount: number; receipt: string }) {
@@ -40,6 +58,10 @@ export function verifyPaymentSignature(orderId: string, paymentId: string, signa
   const expectedBuffer = Buffer.from(expected, 'utf8');
   const actualBuffer = Buffer.from(signature, 'utf8');
   return expectedBuffer.length === actualBuffer.length && crypto.timingSafeEqual(expectedBuffer, actualBuffer);
+}
+
+export async function fetchRazorpayPayment(paymentId: string) {
+  return razorpayRequest<RazorpayPayment>(`/payments/${encodeURIComponent(paymentId)}`);
 }
 
 export function verifyWebhookSignature(rawBody: string, signature: string) {
