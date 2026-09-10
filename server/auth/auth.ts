@@ -1,8 +1,8 @@
-import type { Role, User } from '../models/domain';
-import { users } from '../store/memoryStore';
-import { findUser } from '../db/repositories';
-import { signToken, verifyToken } from './jwt';
-import { verifyPassword } from './password';
+import type { Role, User } from '../models/domain.ts';
+import { users } from '../store/memoryStore.ts';
+import { findUser } from '../db/repositories.ts';
+import { signToken, verifyToken } from './jwt.ts';
+import { verifyPassword } from './password.ts';
 
 export interface Session { token: string; user: User; expiresAt: number; }
 
