@@ -21,14 +21,15 @@ paymentsRouter.post('/create-order', requireAuth, async (req, res) => {
     const payment = await db.collection<Payment>('payments').findOne({ orderId });
     if (!payment) return res.status(404).json({ error: 'Payment record not found' });
     if (payment.status === 'PAID') return res.status(409).json({ error: 'Order is already paid' });
-    const paymentDoc = payment as Payment & { providerOrderId?: string };
-    if (paymentDoc.providerOrderId) return res.json({ keyId: process.env.RAZORPAY_KEY_ID, orderId: paymentDoc.providerOrderId, amount: Math.round(order.total * 100), currency: 'INR' });
+    if (payment.status === 'REFUNDED' || payment.status === 'REFUND_PENDING') return res.status(409).json({ error: 'Payment cannot be retried after refund processing' });
+    if (payment.providerOrderId) return res.json({ keyId: process.env.RAZORPAY_KEY_ID, orderId: payment.providerOrderId, amount: Math.round(order.total * 100), currency: 'INR' });
     try {
       const razorpayOrder = await createRazorpayOrder({ amount: order.total, receipt: order.id });
-      await db.collection('payments').updateOne({ orderId }, { $set: { provider: 'razorpay', providerOrderId: razorpayOrder.id, status: 'PENDING' } });
+      await db.collection<Payment>('payments').updateOne({ orderId }, { $set: { provider: 'razorpay', providerOrderId: razorpayOrder.id, status: 'PENDING' } });
       return res.status(201).json({ keyId: process.env.RAZORPAY_KEY_ID, orderId: razorpayOrder.id, amount: razorpayOrder.amount, currency: razorpayOrder.currency });
     } catch (error) { return res.status(502).json({ error: error instanceof Error ? error.message : 'Unable to create payment order' }); }
   }
+  if (process.env.NODE_ENV === 'production') return res.status(503).json({ error: 'Payment service requires the production database' });
   const order = orders.find(item => item.id === orderId && item.customerId === req.user!.id);
   if (!order) return res.status(404).json({ error: 'Order not found' });
   if (order.paymentMethod === 'COD') return res.status(400).json({ error: 'COD orders do not require online payment' });
@@ -36,7 +37,7 @@ paymentsRouter.post('/create-order', requireAuth, async (req, res) => {
   if (!payment) return res.status(404).json({ error: 'Payment record not found' });
   try {
     const razorpayOrder = await createRazorpayOrder({ amount: order.total, receipt: order.id });
-    (payment as Payment & { providerOrderId?: string }).providerOrderId = razorpayOrder.id;
+    payment.providerOrderId = razorpayOrder.id;
     payment.provider = 'razorpay';
     return res.status(201).json({ keyId: process.env.RAZORPAY_KEY_ID, orderId: razorpayOrder.id, amount: razorpayOrder.amount, currency: razorpayOrder.currency });
   } catch (error) { return res.status(502).json({ error: error instanceof Error ? error.message : 'Unable to create payment order' }); }
@@ -51,7 +52,7 @@ paymentsRouter.post('/verify', requireAuth, async (req, res) => {
     const order = await db.collection<Order>('orders').findOne({ id: orderId, customerId: req.user.id });
     const payment = await db.collection<Payment>('payments').findOne({ orderId });
     if (!order || !payment) return res.status(404).json({ error: 'Order or payment not found' });
-    const paymentDoc = payment as Payment & { providerOrderId?: string };
+    const paymentDoc = payment;
     if (paymentDoc.providerOrderId !== razorpayOrderId) return res.status(400).json({ error: 'Payment order mismatch' });
     if (!verifyPaymentSignature(paymentDoc.providerOrderId, razorpayPaymentId, razorpaySignature)) return res.status(400).json({ error: 'Invalid payment signature' });
     try {
@@ -59,16 +60,16 @@ paymentsRouter.post('/verify', requireAuth, async (req, res) => {
       if (gatewayPayment.order_id !== paymentDoc.providerOrderId) return res.status(400).json({ error: 'Gateway payment order mismatch' });
       if (gatewayPayment.amount !== Math.round(order.total * 100) || gatewayPayment.currency !== 'INR') return res.status(400).json({ error: 'Gateway payment amount mismatch' });
       if (gatewayPayment.status !== 'captured') return res.status(409).json({ error: `Payment is not captured (${gatewayPayment.status})` });
-      await db.collection('payments').updateOne({ orderId }, { $set: { status: 'PAID', provider: 'razorpay', providerPaymentId: razorpayPaymentId } });
+      await db.collection<Payment>('payments').updateOne({ orderId }, { $set: { status: 'PAID', provider: 'razorpay', providerPaymentId: razorpayPaymentId } });
       return res.json({ ok: true, orderId, paymentId: razorpayPaymentId, status: 'PAID' });
     } catch (error) { return res.status(502).json({ error: error instanceof Error ? error.message : 'Unable to verify gateway payment' }); }
   }
+  if (process.env.NODE_ENV === 'production') return res.status(503).json({ error: 'Payment service requires the production database' });
   const order = orders.find(item => item.id === orderId && item.customerId === req.user!.id);
-  const payment = payments.find(item => item.orderId === orderId);
-  const paymentDoc = payment as (Payment & { providerOrderId?: string }) | undefined;
-  if (!order || !paymentDoc || paymentDoc.providerOrderId !== razorpayOrderId) return res.status(404).json({ error: 'Order or payment not found' });
-  if (!verifyPaymentSignature(paymentDoc.providerOrderId!, razorpayPaymentId, razorpaySignature)) return res.status(400).json({ error: 'Invalid payment signature' });
-  paymentDoc.status = 'PAID'; paymentDoc.provider = 'razorpay'; paymentDoc.providerPaymentId = razorpayPaymentId;
+  const payment = payments.find(item => item.orderId === orderId) as (Payment & { providerOrderId?: string }) | undefined;
+  if (!order || !payment || payment.providerOrderId !== razorpayOrderId) return res.status(404).json({ error: 'Order or payment not found' });
+  if (!verifyPaymentSignature(payment.providerOrderId, razorpayPaymentId, razorpaySignature)) return res.status(400).json({ error: 'Invalid payment signature' });
+  payment.status = 'PAID'; payment.provider = 'razorpay'; payment.providerPaymentId = razorpayPaymentId;
   return res.json({ ok: true, orderId, paymentId: razorpayPaymentId, status: 'PAID' });
 });
 
@@ -79,18 +80,34 @@ paymentWebhook.post('/', async (req, res) => {
   if (!signature || !Buffer.isBuffer(req.body)) return res.status(400).json({ error: 'Invalid webhook request' });
   const rawBody = req.body.toString('utf8');
   if (!verifyWebhookSignature(rawBody, signature)) return res.status(400).json({ error: 'Invalid webhook signature' });
-  let payload: { event?: string; payload?: { payment?: { entity?: { order_id?: string } }; order?: { entity?: { id?: string } } } };
+  let payload: {
+    event?: string;
+    payload?: {
+      payment?: { entity?: { id?: string; order_id?: string } };
+      order?: { entity?: { id?: string } };
+    };
+  };
   try { payload = JSON.parse(rawBody); } catch { return res.status(400).json({ error: 'Invalid webhook JSON' }); }
-  if (!eventId) return res.status(200).json({ ok: true });
+  if (!eventId) return res.status(400).json({ error: 'Missing webhook event id' });
   const event = payload.event ?? '';
-  const razorpayOrderId = payload.payload?.payment?.entity?.order_id ?? payload.payload?.order?.entity?.id;
+  const paymentEntity = payload.payload?.payment?.entity;
+  const razorpayOrderId = paymentEntity?.order_id ?? payload.payload?.order?.entity?.id;
   if (mongoDb() && razorpayOrderId) {
     const db = mongoDb()!;
-    const existingEvent = await db.collection('paymentWebhookEvents').findOne({ eventId });
-    if (existingEvent) return res.status(200).json({ ok: true, duplicate: true });
-    await db.collection('paymentWebhookEvents').insertOne({ eventId, event, receivedAt: new Date().toISOString() });
-    if (event === 'payment.captured' || event === 'order.paid') await db.collection('payments').updateOne({ providerOrderId: razorpayOrderId }, { $set: { status: 'PAID', provider: 'razorpay' } });
-    else if (event === 'payment.failed') await db.collection('payments').updateOne({ providerOrderId: razorpayOrderId }, { $set: { status: 'FAILED', provider: 'razorpay' } });
+    try {
+      await db.collection('paymentWebhookEvents').insertOne({ eventId, event, receivedAt: new Date().toISOString() });
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && (error as { code?: number }).code === 11000) return res.status(200).json({ ok: true, duplicate: true });
+      throw error;
+    }
+    const update: Record<string, unknown> = { provider: 'razorpay' };
+    if (event === 'payment.captured' || event === 'order.paid') update.status = 'PAID';
+    else if (event === 'payment.failed') update.status = 'FAILED';
+    else return res.status(200).json({ ok: true, ignored: true });
+    if (paymentEntity?.id) update.providerPaymentId = paymentEntity.id;
+    await db.collection<Payment>('payments').updateOne({ providerOrderId: razorpayOrderId }, { $set: update });
+  } else if (process.env.NODE_ENV === 'production') {
+    return res.status(503).json({ error: 'Payment webhook requires the production database' });
   }
   return res.status(200).json({ ok: true });
 });
