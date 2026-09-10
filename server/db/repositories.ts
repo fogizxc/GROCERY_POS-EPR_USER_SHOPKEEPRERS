@@ -22,7 +22,27 @@ export async function cancelOrderTransaction(order: Order, payment?: Payment) { 
 export async function insertOrder(order: Order) { const db = mongoDb(); if (db) await db.collection<Order>('orders').insertOne(order); }
 export async function insertPayment(payment: Payment) { const db = mongoDb(); if (db) await db.collection<Payment>('payments').insertOne(payment); }
 export async function findOrders(filter: Filter<Order> = {}) { const db = mongoDb(); return db ? db.collection<Order>('orders').find(filter).sort({ createdAt: -1 }).toArray() : []; }
-export async function updateOrderStatus(orderId: string, status: Order['status']) { const db = mongoDb(); return db ? db.collection<Order>('orders').findOneAndUpdate({ id: orderId }, { $set: { status } }, { returnDocument: 'after' }) : null; }
+
+const ORDER_TRANSITIONS: Record<Order['status'], readonly Order['status'][]> = {
+  PLACED: ['ACCEPTED', 'CANCELLED'],
+  ACCEPTED: ['PICKING', 'CANCELLED'],
+  PICKING: ['PACKING'],
+  PACKING: ['READY'],
+  READY: ['OUT_FOR_DELIVERY'],
+  OUT_FOR_DELIVERY: ['DELIVERED'],
+  DELIVERED: [],
+  CANCELLED: [],
+};
+
+export async function updateOrderStatus(orderId: string, status: Order['status']) {
+  const db = mongoDb();
+  if (!db) return null;
+  const current = await db.collection<Order>('orders').findOne({ id: orderId });
+  if (!current) return null;
+  if (current.status === status) return current;
+  if (!ORDER_TRANSITIONS[current.status].includes(status)) throw new Error(`Invalid order status transition: ${current.status} -> ${status}`);
+  return db.collection<Order>('orders').findOneAndUpdate({ id: orderId, status: current.status }, { $set: { status } }, { returnDocument: 'after' });
+}
 export async function updateStock(productId: string, stock: number) { const db = mongoDb(); return db ? db.collection<Product>('products').findOneAndUpdate({ id: productId }, { $set: { stock } }, { returnDocument: 'after' }) : null; }
 export async function listDeliveryAssignments(filter: Filter<DeliveryAssignment> = {}) { const db = mongoDb(); return db ? db.collection<DeliveryAssignment>('deliveryAssignments').find(filter).sort({ assignedAt: -1 }).toArray() : []; }
 export async function upsertDeliveryAssignment(assignment: DeliveryAssignment) { const db = mongoDb(); if (db) await db.collection<DeliveryAssignment>('deliveryAssignments').updateOne({ orderId: assignment.orderId }, { $set: assignment }, { upsert: true }); }
