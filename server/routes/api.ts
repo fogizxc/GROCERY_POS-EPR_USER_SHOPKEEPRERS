@@ -93,7 +93,7 @@ api.post('/orders', requireAuth, async (req, res) => {
       const existing = await db.collection<import('../models/domain').Order>('orders').findOne({ customerId: req.user.id, idempotencyKey });
       if (existing) {
         const payment = await db.collection<Payment>('payments').findOne({ orderId: existing.id });
-        const address = await db.collection<Address>('addresses').findOne({ id: existing.id ? (await db.collection<import('../models/catalog').Address>('addresses').findOne({ id: existing.id, userId: req.user.id }))?.id : '', userId: req.user.id });
+        const address = existing.addressId ? await db.collection<Address>('addresses').findOne({ id: existing.addressId, userId: req.user.id }) : null;
         const slot = existing.deliverySlotId ? await db.collection<import('../models/catalog').DeliverySlot>('deliverySlots').findOne({ id: existing.deliverySlotId }) : null;
         return res.status(200).json({ ...existing, ...(address ? { address } : {}), ...(slot ? { deliverySlot: slot } : {}), ...(payment ? { payment } : {}) });
       }
@@ -102,7 +102,7 @@ api.post('/orders', requireAuth, async (req, res) => {
     if (!address) return res.status(400).json({ error: 'Valid delivery address is required' });
     const orderId = `FC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const orderItems = normalizedInput.map(item => ({ productId: item.productId, name: '', quantity: item.quantity, unitPrice: 0 }));
-    const order = { id: orderId, customerId: req.user.id, shopId: shopId.trim(), items: orderItems, subtotal: 0, deliveryFee: 0, total: 0, paymentMethod: paymentMethod as 'UPI' | 'CARD' | 'COD', status: 'PLACED' as const, createdAt: new Date().toISOString(), deliverySlotId, ...(idempotencyKey ? { idempotencyKey } : {}) };
+    const order = { id: orderId, customerId: req.user.id, shopId: shopId.trim(), items: orderItems, subtotal: 0, deliveryFee: 0, total: 0, paymentMethod: paymentMethod as 'UPI' | 'CARD' | 'COD', status: 'PLACED' as const, createdAt: new Date().toISOString(), addressId: address.id, deliverySlotId, ...(idempotencyKey ? { idempotencyKey } : {}) };
     const dbProducts = await db.collection<import('../models/domain').Product>('products').find({ id: { $in: normalizedInput.map(item => item.productId) }, shopId: order.shopId, active: true }).toArray();
     if (dbProducts.length !== normalizedInput.length) return res.status(400).json({ error: 'One or more products are unavailable' });
     const orderProductMap = new Map(dbProducts.map(product => [product.id, product]));
@@ -130,7 +130,7 @@ api.post('/orders', requireAuth, async (req, res) => {
   if (normalizedItems.some(item => item === null)) return res.status(400).json({ error: 'One or more products are unavailable or have insufficient stock' });
   const orderItems = normalizedItems.map(item => ({ productId: item!.product.id, name: item!.product.name, quantity: item!.quantity, unitPrice: item!.product.sellingPrice }));
   const subtotal = orderItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0); const deliveryFee = subtotal >= 499 ? 0 : 39;
-  const order = { id: `FC-${Date.now()}-${orders.length}`, customerId: req.user.id, shopId, items: orderItems, subtotal, deliveryFee, total: subtotal + deliveryFee, paymentMethod: paymentMethod as 'UPI' | 'CARD' | 'COD', status: 'PLACED' as const, createdAt: new Date().toISOString(), deliverySlotId };
+  const order = { id: `FC-${Date.now()}-${orders.length}`, customerId: req.user.id, shopId, items: orderItems, subtotal, deliveryFee, total: subtotal + deliveryFee, paymentMethod: paymentMethod as 'UPI' | 'CARD' | 'COD', status: 'PLACED' as const, createdAt: new Date().toISOString(), addressId, deliverySlotId };
   orderItems.forEach(item => { const product = products.find(p => p.id === item.productId); if (product) product.stock -= item.quantity; }); slot.booked += 1; orders.unshift(order);
   const payment: Payment = { id: `pay-${Date.now()}`, orderId: order.id, method: order.paymentMethod, status: 'PENDING', amount: order.total, provider: order.paymentMethod === 'COD' ? undefined : 'pending', createdAt: new Date().toISOString() }; payments.push(payment);
   return res.status(201).json({ ...order, address, deliverySlot: slot, payment });
