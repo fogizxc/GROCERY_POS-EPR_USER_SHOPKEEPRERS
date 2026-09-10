@@ -4,7 +4,7 @@ import { api } from '../services/api';
 
 interface AuthScreenProps { onAuthenticated: () => void; }
 
-aexport function AuthScreen({ onAuthenticated }: AuthScreenProps) {
+export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [identifier, setIdentifier] = useState('');
   const [name, setName] = useState('');
@@ -59,7 +59,7 @@ aexport function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               </>}
               {mode === 'login' && <label className="block"><span className="mb-2 block text-xs font-bold text-[#52655b]">Email or phone</span><div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9aa69f]" size={17}/><input required value={identifier} onChange={e=>setIdentifier(e.target.value)} className="w-full rounded-2xl border border-black/10 bg-[#fafbf8] py-3 pl-10 pr-4 text-sm outline-none focus:border-[#6f9f83]" placeholder="you@example.com or 10-digit phone" /></div></label>}
               <label className="block"><span className="mb-2 block text-xs font-bold text-[#52655b]">Password</span><div className="relative"><LockKeyhole className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9aa69f]" size={17}/><input required minLength={8} type={showPassword?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} className="w-full rounded-2xl border border-black/10 bg-[#fafbf8] py-3 pl-10 pr-11 text-sm outline-none focus:border-[#6f9f83]" placeholder="Enter your password" /><button type="button" onClick={()=>setShowPassword(v=>!v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#77867e]">{showPassword?<EyeOff size={17}/>:<Eye size={17}/>}</button></div></label>
-              {mode === 'register' && <p className="rounded-2xl bg-[#f3f7ef] px-4 py-3 text-[11px] leading-5 text-[#5f7067]">Passwords must be at least 8 characters and include letters and numbers.</p>}
+              {mode === 'register' && <p className="rounded-2xl bg-[#f3f7ef] px-4 py-3 text-[11px] leading-5 text-[#5f7067]">Passwords must be at least 8 characters and contain letters and numbers.</p>}
               {error && <div role="alert" className="rounded-2xl bg-[#fff0ed] px-4 py-3 text-xs font-semibold text-[#a14335]">{error}</div>}
               <button disabled={saving} className="flex w-full items-center justify-center rounded-2xl bg-[#173d2e] px-5 py-3.5 text-sm font-extrabold text-white transition hover:bg-[#24523e] disabled:opacity-50">{saving?'Please wait…':mode==='login'?'Sign in securely':'Create customer account'}{!saving&&<ArrowRight size={16} className="ml-2"/>}</button>
             </form>
