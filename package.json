@@ -1,7 +1,7 @@
 {
   "name": "freshcart-grocery-platform",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "FreshCart grocery ecommerce and shopkeeper ERP platform",
   "type": "module",
   "engines": {
@@ -11,7 +11,9 @@
     "dev": "vite",
     "server": "tsx server/index.ts",
     "dev:full": "concurrently \"vite\" \"tsx watch server/index.ts\"",
+    "prepare:vercel": "node scripts/prepare-vercel.mjs",
     "build": "tsc -b && vite build",
+    "vercel-build": "npm run prepare:vercel && npm run build",
     "test": "node --test tests/core.test.mjs",
     "preview": "vite preview"
   },
