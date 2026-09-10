@@ -1,75 +1,61 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { MongoClient } from 'mongodb';
+import { api } from './routes/api';
+import { auth } from './routes/auth';
+import { bootstrap } from './routes/bootstrap';
+import { admin } from './routes/admin';
+import { shopkeeper } from './routes/shopkeeper';
+import { connectMongo, closeMongo, mongoDb } from './db/mongodb';
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
-const mongoUri = process.env.MONGODB_URI;
-const dbName = process.env.MONGODB_DB ?? 'freshcart';
+const clientOrigin = process.env.CLIENT_ORIGIN;
 
-app.use(cors());
+app.disable('x-powered-by');
+app.use(cors({ origin: clientOrigin ? clientOrigin.split(',').map(origin => origin.trim()) : true, credentials: true }));
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 app.use(express.json({ limit: '1mb' }));
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'freshcart-api', timestamp: new Date().toISOString() });
-});
-
 app.get('/api/config', (_req, res) => {
-  res.json({ databaseConfigured: Boolean(mongoUri), environment: process.env.NODE_ENV ?? 'development' });
+  res.json({ databaseConfigured: Boolean(process.env.MONGODB_URI), environment: process.env.NODE_ENV ?? 'development' });
+});
+app.use('/api/auth', auth);
+app.use('/api/bootstrap', bootstrap);
+app.use('/api', api);
+app.use('/api/admin', admin);
+app.use('/api/shopkeeper', shopkeeper);
+
+app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
+app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error(error);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
-app.get('/api/products', async (_req, res) => {
-  if (!mongoUri) {
-    return res.json({ source: 'demo', products: [] });
-  }
-
-  const client = new MongoClient(mongoUri);
+async function start() {
+  if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) throw new Error('JWT_SECRET is required in production');
   try {
-    await client.connect();
-    const products = await client.db(dbName).collection('products').find({ status: { $ne: 'archived' } }).limit(100).toArray();
-    return res.json({ source: 'mongodb', products });
+    const db = await connectMongo();
+    if (db) console.log(`FreshCart MongoDB connected: ${db.databaseName}`);
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Unable to read products' });
-  } finally {
-    await client.close();
-  }
-});
-
-app.post('/api/orders', async (req, res) => {
-  const { customerId, shopId, items, address, deliverySlot, paymentMethod } = req.body ?? {};
-  if (!customerId || !shopId || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: 'customerId, shopId and at least one item are required' });
+    console.error('MongoDB connection failed:', error);
+    if (process.env.NODE_ENV === 'production') throw error;
   }
 
-  const order = {
-    customerId,
-    shopId,
-    items,
-    address: address ?? null,
-    deliverySlot: deliverySlot ?? null,
-    paymentMethod: paymentMethod ?? 'COD',
-    status: 'PLACED',
-    createdAt: new Date(),
-    updatedAt: new Date()
+  const server = app.listen(port, () => console.log(`FreshCart API listening on http://localhost:${port}`));
+  const shutdown = async () => {
+    server.close(async () => {
+      await closeMongo();
+      process.exit(0);
+    });
   };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
+}
 
-  if (!mongoUri) {
-    return res.status(201).json({ source: 'demo', order: { id: `FC-${Date.now()}`, ...order } });
-  }
-
-  const client = new MongoClient(mongoUri);
-  try {
-    await client.connect();
-    const result = await client.db(dbName).collection('orders').insertOne(order);
-    return res.status(201).json({ source: 'mongodb', order: { id: result.insertedId, ...order } });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Unable to create order' });
-  } finally {
-    await client.close();
-  }
-});
-
-app.listen(port, () => console.log(`FreshCart API listening on http://localhost:${port}`));
+void start();
