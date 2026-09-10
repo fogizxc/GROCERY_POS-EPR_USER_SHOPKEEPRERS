@@ -1,47 +1,28 @@
 import { Router } from 'express';
 import { orders, users } from '../store/memoryStore';
 import { requireAuth, requireRole } from '../auth/middleware';
+import { mongoDb } from '../db/mongodb';
+import { findOrders, listDeliveryAssignments, listStaff, updateOrderStatus, upsertDeliveryAssignment } from '../db/repositories';
+import type { DeliveryAssignment } from '../models/catalog';
 
 export const delivery = Router();
 delivery.use(requireAuth, requireRole('employee', 'shopkeeper', 'store_manager', 'admin', 'super_admin'));
-
 const deliveryStatuses = ['ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED'] as const;
 
-delivery.get('/queue', (req, res) => {
-  const isAdmin = req.user?.role === 'admin' || req.user?.role === 'super_admin';
-  const shopId = isAdmin ? undefined : req.user?.shopId;
-  res.json(orders.filter(order => (!shopId || order.shopId === shopId) && ['READY', 'OUT_FOR_DELIVERY'].includes(order.status)));
-});
+delivery.get('/queue', async (req, res) => { const isAdmin = ['admin', 'super_admin'].includes(req.user!.role); const filter = isAdmin ? { status: { $in: ['READY', 'OUT_FOR_DELIVERY'] } } : { shopId: req.user!.shopId, status: { $in: ['READY', 'OUT_FOR_DELIVERY'] } }; if (mongoDb()) return res.json(await findOrders(filter)); return res.json(orders.filter(order => (!req.user!.shopId || order.shopId === req.user!.shopId) && ['READY', 'OUT_FOR_DELIVERY'].includes(order.status))); });
 
-delivery.get('/employees', (req, res) => {
-  const isAdmin = req.user?.role === 'admin' || req.user?.role === 'super_admin';
-  res.json(users.filter(user => user.active && ['employee', 'shopkeeper', 'store_manager'].includes(user.role) && (isAdmin || user.shopId === req.user?.shopId)).map(({ id, name, phone, role, shopId }) => ({ id, name, phone, role, shopId })));
-});
+delivery.get('/employees', async (req, res) => { const isAdmin = ['admin', 'super_admin'].includes(req.user!.role); if (mongoDb()) return res.json(await listStaff(isAdmin ? undefined : req.user!.shopId)); return res.json(users.filter(user => user.active && ['employee', 'shopkeeper', 'store_manager'].includes(user.role) && (isAdmin || user.shopId === req.user!.shopId)).map(({ id, name, phone, role, shopId }) => ({ id, name, phone, role, shopId }))); });
 
-delivery.post('/orders/:id/assign', (req, res) => {
-  const order = orders.find(item => item.id === req.params.id);
+delivery.get('/assignments', async (req, res) => { const isAdmin = ['admin', 'super_admin'].includes(req.user!.role); if (mongoDb()) return res.json(await listDeliveryAssignments(isAdmin ? {} : { shopId: req.user!.shopId })); return res.json([]); });
+
+delivery.post('/orders/:id/assign', async (req, res) => {
   const employeeId = typeof req.body?.employeeId === 'string' ? req.body.employeeId : '';
-  if (!order) return res.status(404).json({ error: 'Order not found' });
-  const isAdmin = req.user?.role === 'admin' || req.user?.role === 'super_admin';
-  if (!isAdmin && order.shopId !== req.user?.shopId) return res.status(403).json({ error: 'Order belongs to another shop' });
-  if (order.status !== 'READY') return res.status(400).json({ error: 'Only READY orders can be assigned' });
-  const employee = users.find(user => user.id === employeeId && user.active && ['employee', 'shopkeeper', 'store_manager'].includes(user.role) && (isAdmin || user.shopId === order.shopId));
-  if (!employee) return res.status(400).json({ error: 'Valid delivery employee is required' });
-  order.status = 'OUT_FOR_DELIVERY';
-  return res.json({ order, assignment: { orderId: order.id, employeeId: employee.id, shopId: order.shopId, status: 'OUT_FOR_DELIVERY', assignedAt: new Date().toISOString() } });
+  if (mongoDb()) { const db = mongoDb()!; const order = await db.collection<import('../models/domain').Order>('orders').findOne({ id: req.params.id }); if (!order) return res.status(404).json({ error: 'Order not found' }); const isAdmin = ['admin', 'super_admin'].includes(req.user!.role); if (!isAdmin && order.shopId !== req.user!.shopId) return res.status(403).json({ error: 'Order belongs to another shop' }); if (order.status !== 'READY') return res.status(400).json({ error: 'Only READY orders can be assigned' }); const employee = await db.collection<import('../models/domain').User>('users').findOne({ id: employeeId, active: true, role: { $in: ['employee', 'shopkeeper', 'store_manager'] }, shopId: order.shopId }); if (!employee) return res.status(400).json({ error: 'Valid delivery employee is required' }); const assignment: DeliveryAssignment = { id: `del-${Date.now()}`, orderId: order.id, shopId: order.shopId, employeeId, status: 'ASSIGNED', assignedAt: new Date().toISOString() }; await upsertDeliveryAssignment(assignment); const updated = await updateOrderStatus(order.id, 'OUT_FOR_DELIVERY'); return res.json({ order: updated, assignment }); }
+  const order = orders.find(item => item.id === req.params.id); if (!order) return res.status(404).json({ error: 'Order not found' }); const isAdmin = ['admin', 'super_admin'].includes(req.user!.role); if (!isAdmin && order.shopId !== req.user!.shopId) return res.status(403).json({ error: 'Order belongs to another shop' }); if (order.status !== 'READY') return res.status(400).json({ error: 'Only READY orders can be assigned' }); const employee = users.find(user => user.id === employeeId && user.active && ['employee', 'shopkeeper', 'store_manager'].includes(user.role) && (isAdmin || user.shopId === order.shopId)); if (!employee) return res.status(400).json({ error: 'Valid delivery employee is required' }); order.status = 'OUT_FOR_DELIVERY'; return res.json({ order, assignment: { orderId: order.id, employeeId, shopId: order.shopId, status: 'ASSIGNED', assignedAt: new Date().toISOString() } });
 });
 
-delivery.patch('/orders/:id/status', (req, res) => {
-  const order = orders.find(item => item.id === req.params.id);
-  const status = req.body?.status as (typeof deliveryStatuses)[number];
-  if (!order) return res.status(404).json({ error: 'Order not found' });
-  if (!deliveryStatuses.includes(status)) return res.status(400).json({ error: 'Invalid delivery status' });
-  const isAdmin = req.user?.role === 'admin' || req.user?.role === 'super_admin';
-  if (!isAdmin && req.user?.shopId !== order.shopId) return res.status(403).json({ error: 'Insufficient permissions' });
-  if (status === 'ASSIGNED' && order.status !== 'READY') return res.status(400).json({ error: 'Order must be READY before assignment' });
-  if (status === 'PICKED_UP' && order.status !== 'OUT_FOR_DELIVERY') return res.status(400).json({ error: 'Order must be OUT_FOR_DELIVERY before pickup' });
-  if (status === 'OUT_FOR_DELIVERY' && !['OUT_FOR_DELIVERY', 'PICKED_UP'].includes(order.status)) return res.status(400).json({ error: 'Order is not ready for delivery' });
-  if (status === 'DELIVERED') order.status = 'DELIVERED';
-  if (status === 'FAILED') order.status = 'CANCELLED';
-  return res.json(order);
+delivery.patch('/orders/:id/status', async (req, res) => {
+  const status = req.body?.status as typeof deliveryStatuses[number]; if (!deliveryStatuses.includes(status)) return res.status(400).json({ error: 'Invalid delivery status' });
+  if (mongoDb()) { const db = mongoDb()!; const order = await db.collection<import('../models/domain').Order>('orders').findOne({ id: req.params.id }); if (!order) return res.status(404).json({ error: 'Order not found' }); const isAdmin = ['admin', 'super_admin'].includes(req.user!.role); if (!isAdmin && order.shopId !== req.user!.shopId) return res.status(403).json({ error: 'Insufficient permissions' }); const assignment = await db.collection<DeliveryAssignment>('deliveryAssignments').findOne({ orderId: order.id }); if (status === 'PICKED_UP' && order.status !== 'OUT_FOR_DELIVERY') return res.status(400).json({ error: 'Order must be OUT_FOR_DELIVERY before pickup' }); if (status === 'OUT_FOR_DELIVERY' && !['OUT_FOR_DELIVERY'].includes(order.status)) return res.status(400).json({ error: 'Order is not ready for delivery' }); const mapped = status === 'DELIVERED' ? 'DELIVERED' : status === 'FAILED' ? 'CANCELLED' : order.status; const updated = await updateOrderStatus(order.id, mapped); if (assignment) await upsertDeliveryAssignment({ ...assignment, status, ...(status === 'DELIVERED' ? { deliveredAt: new Date().toISOString() } : {}) }); return res.json(updated); }
+  const order = orders.find(item => item.id === req.params.id); if (!order) return res.status(404).json({ error: 'Order not found' }); if (status === 'PICKED_UP' && order.status !== 'OUT_FOR_DELIVERY') return res.status(400).json({ error: 'Order must be OUT_FOR_DELIVERY before pickup' }); if (status === 'DELIVERED') order.status = 'DELIVERED'; if (status === 'FAILED') order.status = 'CANCELLED'; return res.json(order);
 });
