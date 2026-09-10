@@ -14,7 +14,7 @@ import { paymentsRouter, paymentWebhook } from './routes/payments';
 import { connectMongo, closeMongo, mongoDb } from './db/mongodb';
 import { rateLimit } from './middleware/rateLimit';
 
-const app = express();
+export const app = express();
 const port = Number(process.env.PORT ?? 4000);
 const isProduction = process.env.NODE_ENV === 'production';
 const clientOrigin = process.env.CLIENT_ORIGIN;
@@ -70,7 +70,6 @@ async function start() {
     if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length < 32) throw new Error('JWT_SECRET with at least 32 characters is required in production');
     if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI is required in production');
     if (!process.env.CLIENT_ORIGIN) throw new Error('CLIENT_ORIGIN is required in production');
-    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET || !process.env.RAZORPAY_WEBHOOK_SECRET) throw new Error('Razorpay credentials and webhook secret are required in production');
   }
   try {
     const db = await connectMongo();
@@ -84,4 +83,5 @@ async function start() {
   const shutdown = async () => { server.close(async () => { await closeMongo(); process.exit(0); }); };
   process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown);
 }
-void start();
+
+if (!process.env.VERCEL) void start();
