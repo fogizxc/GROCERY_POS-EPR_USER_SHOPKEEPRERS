@@ -49,7 +49,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         <section className="p-6 sm:p-10 lg:p-12">
           <div className="mx-auto max-w-md">
             <div className="flex items-center gap-3 lg:hidden"><div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#173d2e] text-lg">🌿</div><span className="text-lg font-extrabold text-[#173d2e]">FreshCart</span></div>
-            <div className="mt-10 lg:mt-4"><p className="text-xs font-extrabold uppercase tracking-[.16em] text-[#819087]">Secure workspace</p><h2 className="heading mt-2 text-3xl font-extrabold text-[#173d2e]">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2><p className="mt-2 text-sm text-[#74837b]">{mode === 'login' ? 'Sign in with your email or phone. FreshCart will open the correct portal automatically.' : 'Create a customer account and start your first grocery order.'}</p></div>
+            <div className="mt-10 lg:mt-4"><p className="text-xs font-extrabold uppercase tracking-[.16em] text-[#819087]">Secure workspace</p><h2 className="heading mt-2 text-3xl font-extrabold text-[#173d2e]">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2></div>
 
             <form onSubmit={submit} className="mt-6 space-y-4">
               {mode === 'register' && <>
