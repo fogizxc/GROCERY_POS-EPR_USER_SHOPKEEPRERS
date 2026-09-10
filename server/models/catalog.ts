@@ -24,7 +24,8 @@ export interface Payment {
   providerPaymentId?: string;
   createdAt: string;
 }
-export interface DeliveryAssignment { id: string; orderId: string; shopId: string; employeeId?: string; status: 'UNASSIGNED' | 'ASSIGNED' | 'PICKED_UP' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'FAILED'; assignedAt?: string; deliveredAt?: string; }
+export interface DeliveryAssignment { id: string; orderId: string; shopId: string; employeeId?: string; status: 'UNASSIGNED' | 'ASSIGNED' | 'PICKED_UP' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'FAILED'; assignedAt?: string; deliveredAt?: string; distanceKm?: number; ratePerKm?: number; earning?: number; }
 export interface Notification { id: string; userId: string; title: string; message: string; type: 'ORDER' | 'STOCK' | 'PAYMENT' | 'SYSTEM' | 'OFFER'; read: boolean; createdAt: string; }
 export interface Attendance { id: string; userId: string; shopId?: string; date: string; checkIn?: string; checkOut?: string; status: 'PRESENT' | 'ABSENT' | 'HALF_DAY' | 'LEAVE'; }
 export interface AuditLog { id: string; actorId: string; actorRole: string; action: string; entity: string; entityId?: string; metadata?: Record<string, unknown>; createdAt: string; }
+export interface DeliveryPricing { baseRatePerKm: number; milestoneRatePerKm: number; milestoneDeliveries: number; updatedAt: string; updatedBy: string; }
