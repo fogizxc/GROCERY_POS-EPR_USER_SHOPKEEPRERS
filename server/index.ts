@@ -9,6 +9,7 @@ import { admin } from './routes/admin';
 import { shopkeeper } from './routes/shopkeeper';
 import { delivery } from './routes/delivery';
 import { ops } from './routes/ops';
+import { paymentsRouter, paymentWebhook } from './routes/payments';
 import { connectMongo, closeMongo } from './db/mongodb';
 import { rateLimit } from './middleware/rateLimit';
 
@@ -20,6 +21,7 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(cors({ origin: clientOrigin ? clientOrigin.split(',').map(origin => origin.trim()) : true, credentials: true }));
 app.use((_req, res, next) => { res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('X-Frame-Options', 'DENY'); res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin'); res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()'); next(); });
+app.use('/api/payments/webhook', express.raw({ type: 'application/json', limit: '1mb' }), paymentWebhook);
 app.use(express.json({ limit: '1mb' }));
 app.get('/api/config', (_req, res) => res.json({ databaseConfigured: Boolean(process.env.MONGODB_URI), environment: process.env.NODE_ENV ?? 'development' }));
 app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 240 }));
@@ -31,6 +33,7 @@ app.use('/api/admin', admin);
 app.use('/api/shopkeeper', shopkeeper);
 app.use('/api/delivery', delivery);
 app.use('/api/ops', ops);
+app.use('/api/payments', paymentsRouter);
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => { console.error(error); res.status(500).json({ error: 'Internal server error' }); });
 
