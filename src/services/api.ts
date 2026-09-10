@@ -3,10 +3,13 @@ const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 export type Role = 'customer' | 'shopkeeper' | 'employee' | 'store_manager' | 'admin' | 'super_admin';
 export type PaymentMethod = 'UPI' | 'CARD' | 'COD';
 export type OrderStatus = 'PLACED' | 'ACCEPTED' | 'PICKING' | 'PACKING' | 'READY' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELLED';
-
+export type AddressLabel = 'HOME' | 'WORK' | 'OTHER';
 export interface ApiUser { id: string; name: string; email: string; phone: string; role: Role; shopId?: string; active: boolean; }
 export interface ApiProduct { id: string; sku: string; name: string; category: string; unit: string; mrp: number; sellingPrice: number; stock: number; minStock: number; shopId?: string; imageUrl?: string; active: boolean; }
 export interface ApiOrderItem { productId: string; name: string; quantity: number; unitPrice: number; }
+export interface ApiAddress { id: string; userId: string; label: AddressLabel; line1: string; line2?: string; city: string; state: string; postalCode: string; landmark?: string; isDefault: boolean; }
+export interface ApiDeliverySlot { id: string; date: string; label: string; startTime: string; endTime: string; capacity: number; booked: number; active: boolean; }
+export interface ApiPayment { id: string; orderId: string; method: PaymentMethod; status: string; amount: number; provider?: string; createdAt: string; }
 export interface ApiOrder { id: string; customerId: string; shopId: string; items: ApiOrderItem[]; subtotal: number; deliveryFee: number; total: number; paymentMethod: PaymentMethod; status: OrderStatus; createdAt: string; }
 export interface ApiShop { id: string; name: string; address: string; active: boolean; }
 
@@ -23,15 +26,25 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
-
+const query = (params?: Record<string, string | undefined>) => {
+  const entries = Object.entries(params ?? {}).filter(([, value]) => value) as [string, string][];
+  return entries.length ? `?${new URLSearchParams(entries)}` : '';
+};
 export const api = {
-  login: (identifier: string, role: Role) => request<{ token: string; user: ApiUser; expiresAt: number }>('/auth/login', { method: 'POST', body: JSON.stringify({ identifier, role }) }),
+  login: async (identifier: string, role: Role) => {
+    const session = await request<{ token: string; user: ApiUser; expiresAt: number }>('/auth/login', { method: 'POST', body: JSON.stringify({ identifier, role }) });
+    localStorage.setItem('freshcart_token', session.token);
+    return session;
+  },
   me: () => request<ApiUser>('/auth/me'),
-  logout: () => request<void>('/auth/logout', { method: 'POST' }),
-  products: (params?: { shopId?: string; category?: string; q?: string }) => request<ApiProduct[]>(`/products?${new URLSearchParams(params as Record<string, string>)}`),
+  logout: async () => { await request<void>('/auth/logout', { method: 'POST' }); localStorage.removeItem('freshcart_token'); },
+  products: (params?: { shopId?: string; category?: string; q?: string }) => request<ApiProduct[]>(`/products${query(params)}`),
   shops: () => request<ApiShop[]>('/shops'),
-  orders: (params?: { status?: OrderStatus; shopId?: string }) => request<ApiOrder[]>(`/orders?${new URLSearchParams(params as Record<string, string>)}`),
-  createOrder: (shopId: string, items: { productId: string; quantity: number }[], paymentMethod: PaymentMethod) => request<ApiOrder>('/orders', { method: 'POST', body: JSON.stringify({ shopId, items, paymentMethod }) }),
+  addresses: () => request<ApiAddress[]>('/addresses'),
+  addAddress: (address: Omit<ApiAddress, 'id' | 'userId'>) => request<ApiAddress>('/addresses', { method: 'POST', body: JSON.stringify(address) }),
+  deliverySlots: () => request<ApiDeliverySlot[]>('/delivery-slots'),
+  orders: (params?: { status?: OrderStatus; shopId?: string }) => request<ApiOrder[]>(`/orders${query(params)}`),
+  createOrder: (input: { shopId: string; items: { productId: string; quantity: number }[]; paymentMethod: PaymentMethod; addressId: string; deliverySlotId: string }) => request<ApiOrder & { address: ApiAddress; deliverySlot: ApiDeliverySlot; payment: ApiPayment }>('/orders', { method: 'POST', body: JSON.stringify(input) }),
   updateOrderStatus: (id: string, status: OrderStatus) => request<ApiOrder>(`/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   updateStock: (id: string, stock: number) => request<ApiProduct>(`/products/${id}/stock`, { method: 'PATCH', body: JSON.stringify({ stock }) }),
   deliveryQueue: () => request<ApiOrder[]>('/delivery/queue'),
