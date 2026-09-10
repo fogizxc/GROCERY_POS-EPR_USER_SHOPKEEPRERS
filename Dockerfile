@@ -10,7 +10,7 @@ ENV NODE_ENV=production
 ENV PORT=4000
 WORKDIR /app
 COPY package.json ./
-RUN npm install --omit=dev
+RUN npm install
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server ./server
 EXPOSE 4000
