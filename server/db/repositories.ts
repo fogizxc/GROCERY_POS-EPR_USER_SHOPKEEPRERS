@@ -1,92 +1,25 @@
 import type { Filter, UpdateFilter } from 'mongodb';
-import { ObjectId } from 'mongodb';
 import type { Order, Product, User, Shop } from '../models/domain';
-import type { Address, DeliverySlot, Payment } from '../models/catalog';
+import type { Address, DeliverySlot, Payment, DeliveryAssignment, Notification, Attendance, AuditLog } from '../models/catalog';
 import { mongoDb } from './mongodb';
 
-export async function findUser(identifier: string, role: string) {
-  const db = mongoDb();
-  if (!db) return null;
-  return db.collection<User>('users').findOne({ $or: [{ email: identifier }, { phone: identifier }], role, active: true });
-}
-
-export async function listProducts(shopId?: string, category?: string, q?: string) {
-  const db = mongoDb();
-  if (!db) return [];
-  const filter: Filter<Product> = { active: true, ...(shopId ? { shopId } : {}), ...(category ? { category } : {}) };
-  if (q) filter.$text = { $search: q };
-  return db.collection<Product>('products').find(filter).toArray();
-}
-
-export async function listShops() {
-  const db = mongoDb();
-  return db ? db.collection<Shop>('shops').find({ active: true }).toArray() : [];
-}
-
-export async function listAddresses(userId: string) {
-  const db = mongoDb();
-  return db ? db.collection<Address>('addresses').find({ userId }).sort({ isDefault: -1 }).toArray() : [];
-}
-
-export async function insertAddress(address: Address) {
-  const db = mongoDb();
-  if (!db) return;
-  if (address.isDefault) await db.collection<Address>('addresses').updateMany({ userId: address.userId }, { $set: { isDefault: false } });
-  await db.collection<Address>('addresses').insertOne(address);
-}
-
-export async function listDeliverySlots() {
-  const db = mongoDb();
-  return db ? db.collection<DeliverySlot>('deliverySlots').find({ active: true, $expr: { $lt: ['$booked', '$capacity'] } }).sort({ date: 1, startTime: 1 }).toArray() : [];
-}
-
-export async function reserveProductsAndSlot(shopId: string, items: Array<{ productId: string; quantity: number }>, slotId: string) {
-  const db = mongoDb();
-  if (!db) return { products: [], slot: null };
-  const products = [] as Product[];
-  for (const item of items) {
-    const result = await db.collection<Product>('products').findOneAndUpdate(
-      { id: item.productId, shopId, active: true, stock: { $gte: item.quantity } },
-      { $inc: { stock: -item.quantity } } as UpdateFilter<Product>,
-      { returnDocument: 'after' },
-    );
-    if (!result) {
-      for (const reserved of items.slice(0, products.length)) await db.collection<Product>('products').updateOne({ id: reserved.productId, shopId }, { $inc: { stock: reserved.quantity } });
-      return { products: [], slot: null };
-    }
-    products.push(result);
-  }
-  const slot = await db.collection<DeliverySlot>('deliverySlots').findOneAndUpdate(
-    { id: slotId, active: true, $expr: { $lt: ['$booked', '$capacity'] } },
-    { $inc: { booked: 1 } },
-    { returnDocument: 'after' },
-  );
-  if (!slot) {
-    for (const item of items) await db.collection<Product>('products').updateOne({ id: item.productId, shopId }, { $inc: { stock: item.quantity } });
-    return { products: [], slot: null };
-  }
-  return { products, slot };
-}
-
-export async function insertOrder(order: Order) {
-  const db = mongoDb();
-  if (!db) return;
-  await db.collection<Order>('orders').insertOne(order);
-}
-
-export async function insertPayment(payment: Payment) {
-  const db = mongoDb();
-  if (!db) return;
-  await db.collection<Payment>('payments').insertOne(payment);
-}
-
-export async function findOrders(filter: Filter<Order> = {}) {
-  const db = mongoDb();
-  return db ? db.collection<Order>('orders').find(filter).sort({ createdAt: -1 }).toArray() : [];
-}
-
-export async function updateOrderStatus(orderId: string, status: Order['status']) {
-  const db = mongoDb();
-  if (!db) return null;
-  return db.collection<Order>('orders').findOneAndUpdate({ id: orderId }, { $set: { status } }, { returnDocument: 'after' });
-}
+export async function findUser(identifier: string, role: string) { const db = mongoDb(); return db ? db.collection<User>('users').findOne({ $or: [{ email: identifier }, { phone: identifier }], role, active: true }) : null; }
+export async function listProducts(shopId?: string, category?: string, q?: string) { const db = mongoDb(); if (!db) return []; const filter: Filter<Product> = { active: true, ...(shopId ? { shopId } : {}), ...(category ? { category } : {}) }; if (q) filter.$text = { $search: q }; return db.collection<Product>('products').find(filter).toArray(); }
+export async function listShops() { const db = mongoDb(); return db ? db.collection<Shop>('shops').find({ active: true }).toArray() : []; }
+export async function listStaff(shopId?: string) { const db = mongoDb(); if (!db) return []; return db.collection<User>('users').find({ active: true, role: { $in: ['employee', 'shopkeeper', 'store_manager'] }, ...(shopId ? { shopId } : {}) }).project({ passwordHash: 0 }).toArray(); }
+export async function listAddresses(userId: string) { const db = mongoDb(); return db ? db.collection<Address>('addresses').find({ userId }).sort({ isDefault: -1 }).toArray() : []; }
+export async function insertAddress(address: Address) { const db = mongoDb(); if (!db) return; if (address.isDefault) await db.collection<Address>('addresses').updateMany({ userId: address.userId }, { $set: { isDefault: false } }); await db.collection<Address>('addresses').insertOne(address); }
+export async function listDeliverySlots() { const db = mongoDb(); return db ? db.collection<DeliverySlot>('deliverySlots').find({ active: true, $expr: { $lt: ['$booked', '$capacity'] } }).sort({ date: 1, startTime: 1 }).toArray() : []; }
+export async function reserveProductsAndSlot(shopId: string, items: Array<{ productId: string; quantity: number }>, slotId: string) { const db = mongoDb(); if (!db) return { products: [], slot: null }; const products: Product[] = []; for (const item of items) { const result = await db.collection<Product>('products').findOneAndUpdate({ id: item.productId, shopId, active: true, stock: { $gte: item.quantity } }, { $inc: { stock: -item.quantity } } as UpdateFilter<Product>, { returnDocument: 'after' }); if (!result) { for (const reserved of items.slice(0, products.length)) await db.collection<Product>('products').updateOne({ id: reserved.productId, shopId }, { $inc: { stock: reserved.quantity } }); return { products: [], slot: null }; } products.push(result); } const slot = await db.collection<DeliverySlot>('deliverySlots').findOneAndUpdate({ id: slotId, active: true, $expr: { $lt: ['$booked', '$capacity'] } }, { $inc: { booked: 1 } }, { returnDocument: 'after' }); if (!slot) { for (const item of items) await db.collection<Product>('products').updateOne({ id: item.productId, shopId }, { $inc: { stock: item.quantity } }); return { products: [], slot: null }; } return { products, slot }; }
+export async function insertOrder(order: Order) { const db = mongoDb(); if (db) await db.collection<Order>('orders').insertOne(order); }
+export async function insertPayment(payment: Payment) { const db = mongoDb(); if (db) await db.collection<Payment>('payments').insertOne(payment); }
+export async function findOrders(filter: Filter<Order> = {}) { const db = mongoDb(); return db ? db.collection<Order>('orders').find(filter).sort({ createdAt: -1 }).toArray() : []; }
+export async function updateOrderStatus(orderId: string, status: Order['status']) { const db = mongoDb(); return db ? db.collection<Order>('orders').findOneAndUpdate({ id: orderId }, { $set: { status } }, { returnDocument: 'after' }) : null; }
+export async function updateStock(productId: string, stock: number) { const db = mongoDb(); return db ? db.collection<Product>('products').findOneAndUpdate({ id: productId }, { $set: { stock } }, { returnDocument: 'after' }) : null; }
+export async function listDeliveryAssignments(filter: Filter<DeliveryAssignment> = {}) { const db = mongoDb(); return db ? db.collection<DeliveryAssignment>('deliveryAssignments').find(filter).sort({ assignedAt: -1 }).toArray() : []; }
+export async function upsertDeliveryAssignment(assignment: DeliveryAssignment) { const db = mongoDb(); if (db) await db.collection<DeliveryAssignment>('deliveryAssignments').updateOne({ orderId: assignment.orderId }, { $set: assignment }, { upsert: true }); }
+export async function listNotifications(userId: string) { const db = mongoDb(); return db ? db.collection<Notification>('notifications').find({ userId }).sort({ createdAt: -1 }).limit(100).toArray() : []; }
+export async function createNotification(notification: Notification) { const db = mongoDb(); if (db) await db.collection<Notification>('notifications').insertOne(notification); }
+export async function listAttendance(userId: string, from?: string, to?: string) { const db = mongoDb(); if (!db) return []; const filter: Filter<Attendance> = { userId, ...(from || to ? { date: { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) } } : {}) }; return db.collection<Attendance>('attendance').find(filter).sort({ date: -1 }).toArray(); }
+export async function upsertAttendance(attendance: Attendance) { const db = mongoDb(); if (db) await db.collection<Attendance>('attendance').updateOne({ userId: attendance.userId, date: attendance.date }, { $set: attendance }, { upsert: true }); }
+export async function createAuditLog(log: AuditLog) { const db = mongoDb(); if (db) await db.collection<AuditLog>('auditLogs').insertOne(log); }
