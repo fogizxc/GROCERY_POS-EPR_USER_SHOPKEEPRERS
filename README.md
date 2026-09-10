@@ -1,24 +1,43 @@
-# FreshCart — Grocery Commerce Platform
+# FreshCart Grocery Platform
 
-FreshCart is a responsive grocery ecosystem with three connected experiences:
+FreshCart is a responsive three-sided grocery ecosystem for customers, shopkeepers/employees, and owners/admins.
 
-- **Customer** — discover groceries, search, cart, checkout, delivery tracking, reorder and wishlist.
-- **Shopkeeper / Employee** — receive orders, pick and pack, manage substitutions and stock, attendance and delivery tasks.
-- **Admin / Owner ERP** — monitor sales, orders, inventory, branches, employees, customers, payments and operations.
+## Product surfaces
 
-## Design direction
-
-Premium fresh-market ecommerce: botanical greens, warm ivory surfaces, generous whitespace, rounded cards, subtle shadows and clean product photography.
+- **Customer:** discovery, search, categories, cart, checkout, delivery slots, orders, wishlist and reorder flows.
+- **Shopkeeper / Employee:** incoming orders, picking/packing, substitutions, stock alerts, attendance and daily operations.
+- **Admin / Owner ERP:** sales and order dashboards, inventory, catalog, shops, staff, customers, delivery and reporting.
 
 ## Stack
 
-React + TypeScript + Vite + Tailwind CSS + Lucide React.
+- React + TypeScript + Vite + Tailwind CSS
+- Express API
+- MongoDB-ready persistence
+- Lucide icons
 
-## Local development
+## Run locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-The first release is a front-end vertical slice with role switching and realistic demo data. Backend APIs, database persistence, authentication and payment integrations can be added behind the same domain model.
+API only:
+
+```bash
+npm run server
+```
+
+Full local development:
+
+```bash
+npm run dev:full
+```
+
+Copy `.env.example` to `.env` and set `MONGODB_URI` when using MongoDB. Without it, the API still exposes health/config endpoints and returns demo responses for order creation.
+
+## Architecture direction
+
+`Customer -> FreshCart Platform -> Nearby / Assigned Shop -> Shopkeeper / Employee -> Delivery`
+
+The repository is intentionally independent from the legacy liquor ERP repository.
