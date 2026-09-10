@@ -1,12 +1,14 @@
 import type { Role, User } from '../models/domain';
 import { users } from '../store/memoryStore';
+import { findUser } from '../db/repositories';
 import { signToken, verifyToken } from './jwt';
 
 export interface Session { token: string; user: User; expiresAt: number; }
 
-export function signIn(identifier: string, role: Role): Session | null {
+export async function signIn(identifier: string, role: Role): Promise<Session | null> {
   const normalized = identifier.trim().toLowerCase();
-  const user = users.find(
+  const mongoUser = await findUser(normalized, role);
+  const user = mongoUser ?? users.find(
     u => u.active && (u.email.toLowerCase() === normalized || u.phone === identifier.trim()) && u.role === role,
   );
   if (!user) return null;
@@ -14,15 +16,17 @@ export function signIn(identifier: string, role: Role): Session | null {
   return { token, user, expiresAt: Date.now() + 1000 * 60 * 60 * 12 };
 }
 
-export function getUserFromToken(token?: string) {
+export async function getUserFromToken(token?: string) {
   if (!token) return null;
   const claims = verifyToken(token);
   if (!claims) return null;
+  const dbUser = await findUser(claims.sub, claims.role);
+  if (dbUser) return dbUser;
   return users.find(u => u.active && u.id === claims.sub && u.role === claims.role) ?? null;
 }
 
-export function getSession(token?: string): Session | null {
-  const user = getUserFromToken(token);
+export async function getSession(token?: string): Promise<Session | null> {
+  const user = await getUserFromToken(token);
   if (!user || !token) return null;
   const claims = verifyToken(token);
   if (!claims) return null;
