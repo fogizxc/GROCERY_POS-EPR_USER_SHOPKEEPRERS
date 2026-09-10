@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react';
-import { ArrowRight, Eye, EyeOff, Facebook, Instagram, Leaf, Linkedin, LockKeyhole, Mail, MessageCircle, Phone, Store, UserRound, Youtube } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, Leaf, LockKeyhole, Mail, Phone, Store, UserRound } from 'lucide-react';
 import { PartnerApplicationModal } from './PartnerApplicationModal';
 import { api } from '../services/api';
 
@@ -74,13 +74,10 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
             <div className="mt-auto pt-8">
               <div className="rounded-2xl border border-[#e8ede7] bg-[#fbfcfa] p-3.5"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-[#819087]">Join FreshCart</p><p className="mt-1 text-xs font-semibold text-[#4f6258]">Build your business or career with us</p></div><Store size={18} className="text-[#4c8b67]"/></div><div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={()=>setPartnerType('shopkeeper')} className="rounded-xl border border-[#d8e3d9] bg-white px-3 py-2.5 text-xs font-extrabold text-[#315b43] transition hover:-translate-y-0.5 hover:border-[#9abd9e] hover:bg-[#f4f8f2]">Shopkeeper / Store</button><button type="button" onClick={()=>setPartnerType('employee')} className="rounded-xl border border-[#d8e3d9] bg-white px-3 py-2.5 text-xs font-extrabold text-[#315b43] transition hover:-translate-y-0.5 hover:border-[#9abd9e] hover:bg-[#f4f8f2]">Employee / Delivery</button></div></div>
 
-              <div className="mt-4 flex items-center justify-center gap-2">
-                <a href="#" aria-label="YouTube" title="YouTube" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]"><Youtube size={14}/></a>
-                <a href="#" aria-label="Instagram" title="Instagram" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]"><Instagram size={14}/></a>
-                <a href="#" aria-label="Facebook" title="Facebook" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]"><Facebook size={14}/></a>
-                <a href="#" aria-label="X" title="X" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[13px] font-black text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]">X</a>
-                <a href="#" aria-label="LinkedIn" title="LinkedIn" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]"><Linkedin size={14}/></a>
-                <a href="#" aria-label="WhatsApp" title="WhatsApp" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]"><MessageCircle size={14}/></a>
+              <div className="mt-4 flex items-center justify-center gap-2" aria-label="FreshCart social links">
+                {[
+                  ['YT', 'YouTube'], ['IG', 'Instagram'], ['f', 'Facebook'], ['𝕏', 'X'], ['in', 'LinkedIn'], ['WA', 'WhatsApp']
+                ].map(([mark, label]) => <a key={label} href="#" aria-label={label} title={label} className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[10px] font-black text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]">{mark}</a>)}
               </div>
               <div className="mt-3 text-center text-[10px] font-semibold tracking-wide text-[#a0aaa4]">FreshCart • Fresh groceries, delivered simply</div>
             </div>
