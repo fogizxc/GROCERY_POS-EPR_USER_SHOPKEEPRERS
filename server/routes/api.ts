@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { addresses, deliverySlots, orders, payments, products, shops, users } from '../store/memoryStore';
-import type { Address, Payment } from '../models/catalog';
-import type { OrderStatus } from '../models/domain';
-import { requireAuth } from '../auth/middleware';
-import { listProducts, listShops, listAddresses, insertAddress, listDeliverySlots, createOrderTransaction, cancelOrderTransaction, findOrders, findUserById, updateOrderStatus } from '../db/repositories';
-import { mongoDb } from '../db/mongodb';
+import { addresses, deliverySlots, orders, payments, products, shops, users } from '../store/memoryStore.ts';
+import type { Address, Payment } from '../models/catalog.ts';
+import type { OrderStatus } from '../models/domain.ts';
+import { requireAuth } from '../auth/middleware.ts';
+import { listProducts, listShops, listAddresses, insertAddress, listDeliverySlots, createOrderTransaction, cancelOrderTransaction, findOrders, findUserById, updateOrderStatus } from '../db/repositories.ts';
+import { mongoDb } from '../db/mongodb.ts';
 
 export const api = Router();
 api.get('/health', (_req, res) => res.json({ ok: true, service: 'freshcart-api', timestamp: new Date().toISOString() }));
@@ -75,7 +75,7 @@ api.get('/orders', requireAuth, async (req, res) => {
 
 api.post('/orders', requireAuth, async (req, res) => {
   const { shopId, items, paymentMethod = 'COD', addressId, deliverySlotId } = req.body ?? {};
-  const idempotencyKey = req.header('Idempotency-Key')?.trim();
+  const idempotencyKey = req.headers['idempotency-key']?.trim();
   if (req.user?.role !== 'customer') return res.status(403).json({ error: 'Only customers can place orders' });
   if (typeof shopId !== 'string' || !shopId.trim() || !Array.isArray(items) || !items.length || items.length > 100 || typeof addressId !== 'string' || typeof deliverySlotId !== 'string') return res.status(400).json({ error: 'shopId, 1-100 items, addressId and deliverySlotId are required' });
   if (idempotencyKey && (idempotencyKey.length < 16 || idempotencyKey.length > 128)) return res.status(400).json({ error: 'Idempotency-Key must be between 16 and 128 characters' });
