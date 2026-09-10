@@ -24,7 +24,9 @@
     "vite": "latest"
   },
   "devDependencies": {
-    "concurrently": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "concurrently": "9",
     "tsx": "latest"
   }
 }
