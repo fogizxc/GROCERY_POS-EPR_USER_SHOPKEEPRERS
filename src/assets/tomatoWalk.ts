@@ -1,0 +1,1 @@
+export const tomatoWalkUrl = `data:image/gif;base64,R0lGODlh8ACHAPf/MQAAAAEBAQQCAxQNDhsfISkuMC0XFi8rLjGgLThATzzBPD5COUI+QkpZcEsbGU3j`;
