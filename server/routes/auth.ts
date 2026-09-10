@@ -12,10 +12,10 @@ const publicUser = (user: User) => { const { passwordHash: _passwordHash, ...saf
 auth.post('/login', async (req, res) => {
   const { identifier, password } = req.body ?? {};
   if (typeof identifier !== 'string' || !identifier.trim()) return res.status(400).json({ error: 'Email or phone is required' });
-  if (password !== undefined && typeof password !== 'string') return res.status(400).json({ error: 'Password must be a string' });
+  if (typeof password !== 'string' || !password) return res.status(400).json({ error: 'Password is required' });
   try {
     const session = await signIn(identifier, password);
-    if (!session) return res.status(401).json({ error: 'Invalid account or password' });
+    if (!session) return res.status(401).json({ error: 'Invalid account or password. Customer accounts must be created first; shopkeeper and employee accounts are available only after owner approval and credential provisioning.' });
     return res.json({ token: session.token, user: publicUser(session.user), expiresAt: session.expiresAt });
   } catch (error) {
     console.error(error);
@@ -31,7 +31,7 @@ auth.post('/register', async (req, res) => {
   if (!isStrongPassword(password)) return res.status(400).json({ error: 'Password must be 8-128 characters and contain letters and numbers' });
   const normalizedEmail = email.trim().toLowerCase(); const normalizedPhone = phone.trim();
   try {
-    const existingMongo = await Promise.all([findUser(normalizedEmail, 'customer'), findUser(normalizedPhone, 'customer')]);
+    const existingMongo = await Promise.all(roles.map(role => findUser(normalizedEmail, role)), roles.map(role => findUser(normalizedPhone, role)));
     if (existingMongo.some(Boolean) || users.some(u => u.active && (u.email.toLowerCase() === normalizedEmail || u.phone === normalizedPhone))) return res.status(409).json({ error: 'An account with this email or phone already exists' });
     const user: User = { id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: name.trim(), email: normalizedEmail, phone: normalizedPhone, role: 'customer', active: true, passwordHash: hashPassword(password) };
     if (process.env.MONGODB_URI) await createUser(user); else users.push(user);
