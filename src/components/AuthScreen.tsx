@@ -5,6 +5,36 @@ import { api } from '../services/api';
 
 interface AuthScreenProps { onAuthenticated: () => void; }
 
+type SocialProps = { label: string; href?: string; children: React.ReactNode };
+
+function SocialLink({ label, href = '#', children }: SocialProps) {
+  return <a href={href} aria-label={label} title={label} className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec] hover:text-[#173d2e]">{children}</a>;
+}
+
+function YoutubeIcon() {
+  return <svg viewBox="0 0 24 24" className="h-[15px] w-[15px]" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.12-2.12C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.38.58A3 3 0 0 0 .5 6.2C0 8.08 0 12 0 12s0 3.92.5 5.8a3 3 0 0 0 2.12 2.12C4.5 20.5 12 20.5 12 20.5s7.5 0 9.38-.58a3 3 0 0 0 2.12-2.12C24 15.92 24 12 24 12s0-3.92-.5-5.8ZM9.6 15.9V8.1l6.6 3.9-6.6 3.9Z"/></svg>;
+}
+
+function InstagramIcon() {
+  return <svg viewBox="0 0 24 24" className="h-[15px] w-[15px]" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>;
+}
+
+function FacebookIcon() {
+  return <svg viewBox="0 0 24 24" className="h-[15px] w-[15px]" fill="currentColor" aria-hidden="true"><path d="M13.5 21v-8h2.7l.4-3h-3.1V8.1c0-.87.24-1.46 1.48-1.46h1.58V4a21 21 0 0 0-2.3-.12c-2.27 0-3.82 1.39-3.82 3.94V10H8v3h2.44v8h3.06Z"/></svg>;
+}
+
+function XIcon() {
+  return <svg viewBox="0 0 24 24" className="h-[14px] w-[14px]" fill="currentColor" aria-hidden="true"><path d="m5.3 4 5.7 7.6L5 20h2.9l4.4-5.8L16.7 20H20l-6.2-8.2L19.7 4h-2.9l-4.1 5.4L8.4 4H5.3Z"/></svg>;
+}
+
+function LinkedinIcon() {
+  return <svg viewBox="0 0 24 24" className="h-[15px] w-[15px]" fill="currentColor" aria-hidden="true"><path d="M5.2 8.4A1.8 1.8 0 1 1 5.2 4.8a1.8 1.8 0 0 1 0 3.6ZM3.6 9.7h3.2V20H3.6V9.7Zm5.2 0h3.1v1.4h.04c.43-.82 1.48-1.68 3.05-1.68 3.26 0 3.86 2.14 3.86 4.92V20h-3.2v-5.02c0-1.2-.02-2.74-1.67-2.74-1.67 0-1.92 1.3-1.92 2.65V20H8.8V9.7Z"/></svg>;
+}
+
+function WhatsAppIcon() {
+  return <svg viewBox="0 0 24 24" className="h-[15px] w-[15px]" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20.1 3.9A10 10 0 0 0 4.2 16.1L3 21l5-1.3A10 10 0 0 0 20.1 3.9Z"/><path d="M8.3 7.3c.2-.4.45-.4.73-.41h.62c.2 0 .4.08.5.34l.72 1.76c.08.2.07.37-.05.55l-.55.72c-.12.16-.17.3-.05.5.3.53 1.07 1.76 2.2 2.47.92.58 1.53.76 1.82.87.22.08.39.07.54-.1l.73-.84c.15-.18.32-.2.54-.11l1.65.78c.22.1.37.16.42.25.05.1.05.56-.13 1.07-.18.51-1.03.98-1.43 1.02-.4.04-.88.18-2.97-.63-2.5-.97-4.14-3.52-4.27-3.69-.12-.17-1-1.33-1-2.54 0-1.21.63-1.8.89-2.04Z"/></svg>;
+}
+
 export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [identifier, setIdentifier] = useState('');
@@ -72,17 +102,23 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
             </form>
 
             <div className="mt-auto pt-8">
-              <div className="rounded-2xl border border-[#e8ede7] bg-[#fbfcfa] p-3.5"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-[#819087]">Join FreshCart</p><p className="mt-1 text-xs font-semibold text-[#4f6258]">Build your business or career with us</p></div><Store size={18} className="text-[#4c8b67]"/></div><div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={()=>setPartnerType('shopkeeper')} className="rounded-xl border border-[#d8e3d9] bg-white px-3 py-2.5 text-xs font-extrabold text-[#315b43] transition hover:-translate-y-0.5 hover:border-[#9abd9e] hover:bg-[#f4f8f2]">Shopkeeper / Store</button><button type="button" onClick={()=>setPartnerType('employee')} className="rounded-xl border border-[#d8e3d9] bg-white px-3 py-2.5 text-xs font-extrabold text-[#315b43] transition hover:-translate-y-0.5 hover:border-[#9abd9e] hover:bg-[#f4f8f2]">Employee / Delivery</button></div></div>
+              <div className="rounded-2xl border border-[#e8ede7] bg-[#fbfcfa] p-3.5">
+                <div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-[#819087]">Join FreshCart</p><p className="mt-1 text-xs font-semibold text-[#4f6258]">Build your business or career with us</p></div><Store size={18} className="text-[#4c8b67]"/></div>
+                <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={()=>setPartnerType('shopkeeper')} className="rounded-xl border border-[#d8e3d9] bg-white px-3 py-2.5 text-xs font-extrabold text-[#315b43] transition hover:-translate-y-0.5 hover:border-[#9abd9e] hover:bg-[#f4f8f2]">Shopkeeper / Store</button><button type="button" onClick={()=>setPartnerType('employee')} className="rounded-xl border border-[#d8e3d9] bg-white px-3 py-2.5 text-xs font-extrabold text-[#315b43] transition hover:-translate-y-0.5 hover:border-[#9abd9e] hover:bg-[#f4f8f2]">Employee / Delivery</button></div>
+              </div>
+
+              <div className="mt-3 text-center text-xs text-[#7a8981]">{mode==='login'?"Don't have a customer account?":"Already have an account?"} <button type="button" onClick={()=>switchMode(mode==='login'?'register':'login')} className="font-extrabold text-[#356c51]">{mode==='login'?'Create one':'Sign in'}</button></div>
 
               <div className="mt-4 flex items-center justify-center gap-2" aria-label="FreshCart social links">
-                {[
-                  ['YT', 'YouTube'], ['IG', 'Instagram'], ['f', 'Facebook'], ['𝕏', 'X'], ['in', 'LinkedIn'], ['WA', 'WhatsApp']
-                ].map(([mark, label]) => <a key={label} href="#" aria-label={label} title={label} className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[10px] font-black text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]">{mark}</a>)}
+                <SocialLink label="YouTube"><YoutubeIcon/></SocialLink>
+                <SocialLink label="Instagram"><InstagramIcon/></SocialLink>
+                <SocialLink label="Facebook"><FacebookIcon/></SocialLink>
+                <SocialLink label="X"><XIcon/></SocialLink>
+                <SocialLink label="LinkedIn"><LinkedinIcon/></SocialLink>
+                <SocialLink label="WhatsApp"><WhatsAppIcon/></SocialLink>
               </div>
               <div className="mt-3 text-center text-[10px] font-semibold tracking-wide text-[#a0aaa4]">FreshCart • Fresh groceries, delivered simply</div>
             </div>
-
-            <div className="mt-5 text-center text-xs text-[#7a8981]">{mode==='login'?"Don't have a customer account?":"Already have an account?"} <button type="button" onClick={()=>switchMode(mode==='login'?'register':'login')} className="font-extrabold text-[#356c51]">{mode==='login'?'Create one':'Sign in'}</button></div>
           </div>
         </section>
       </div>
