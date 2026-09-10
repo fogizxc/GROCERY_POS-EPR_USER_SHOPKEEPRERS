@@ -3,11 +3,12 @@ import { products, orders, shops, users } from '../store/memoryStore';
 import { requireAuth, requireRole } from '../auth/middleware';
 import { mongoDb } from '../db/mongodb';
 import { createUser, findOrders, listShops, listStaff } from '../db/repositories';
-import { hashPassword, isStrongPassword } from '../auth/password';
+import { hashPassword } from '../auth/password';
 import { adminCatalog } from './adminCatalog';
 import { approveSalesImport, rejectSalesImport } from './onboarding';
 import type { PartnerApplicationType } from './onboarding';
 import type { SalesImport, User } from '../models/domain';
+import { ensurePartnerCredentialPools, listPartnerCredentialPool, claimPartnerCredential } from '../auth/shopCredentials';
 
 export const admin = Router();
 admin.use(requireAuth, requireRole('admin', 'super_admin'));
@@ -31,22 +32,43 @@ admin.get('/orders', async (_req, res) => { if (mongoDb()) return res.json(await
 admin.get('/onboarding/applications', async (req, res) => { const db = mongoDb(); if (!db) return res.status(503).json({ error: 'MongoDB is required for onboarding approvals' }); const type = typeof req.query.type === 'string' ? req.query.type : undefined; const status = typeof req.query.status === 'string' ? req.query.status : 'PENDING_REVIEW'; const applications = await db.collection('onboardingApplications').find({ ...(type && ['shopkeeper','employee'].includes(type)?{type:type as PartnerApplicationType}:{}), ...(status?{status}:{}) }).sort({submittedAt:-1}).limit(200).toArray(); return res.json(applications); });
 admin.patch('/onboarding/applications/:referenceId/status', async (req,res) => { const db=mongoDb(); if(!db)return res.status(503).json({error:'MongoDB is required for onboarding approvals'}); const status=req.body?.status; if(!['APPROVED','REJECTED'].includes(status))return res.status(400).json({error:'Status must be APPROVED or REJECTED'}); const updated=await db.collection('onboardingApplications').findOneAndUpdate({referenceId:req.params.referenceId,status:'PENDING_REVIEW'},{$set:{status,reviewedBy:req.user!.id,reviewedAt:new Date().toISOString()}},{returnDocument:'after'}); if(!updated)return res.status(404).json({error:'Pending application not found'}); return res.json(updated); });
 
-admin.post('/onboarding/applications/:referenceId/activate', async (req,res) => {
-  const db=mongoDb(); if(!db)return res.status(503).json({error:'MongoDB is required for account activation'});
+admin.get('/partner-credentials', async (req,res) => { const kind = req.query.kind === 'employee' ? 'employee' : 'shopkeeper'; try { await ensurePartnerCredentialPools(); return res.json({ kind, count: 100, credentials: await listPartnerCredentialPool(kind) }); } catch (error) { console.error(error); return res.status(503).json({ error: 'Unable to prepare credential pool' }); } });
+
+admin.post('/onboarding/applications/:referenceId/assign-credential', async (req,res) => {
+  const db=mongoDb(); if(!db)return res.status(503).json({error:'MongoDB is required for account assignment'});
+  try { await ensurePartnerCredentialPools(); } catch { return res.status(503).json({error:'Credential pool is unavailable'}); }
   const application=await db.collection<any>('onboardingApplications').findOne({referenceId:req.params.referenceId,status:'APPROVED'});
   if(!application)return res.status(404).json({error:'Approved application not found'});
-  const username=typeof req.body?.username==='string'?req.body.username.trim().toLowerCase():'';
-  const password=typeof req.body?.password==='string'?req.body.password:'';
+  if(application.activatedAt)return res.status(409).json({error:'This application already has an account'});
+  const rawSuffix=String(req.body?.suffix??'').trim();
+  if(!/^\d{1,4}$/.test(rawSuffix))return res.status(400).json({error:'Enter the last four-digit credential number'});
+  const slot=Number(rawSuffix); if(slot<1||slot>100)return res.status(400).json({error:'Credential number must be between 0001 and 0100'});
   const shopId=typeof req.body?.shopId==='string'?req.body.shopId.trim():'';
-  if(!/^[a-z0-9._-]{4,40}$/.test(username))return res.status(400).json({error:'Username must be 4-40 characters using letters, numbers, dot, underscore or hyphen'});
-  if(!isStrongPassword(password))return res.status(400).json({error:'Password must be 8-128 characters and contain letters and numbers'});
-  if(application.type==='shopkeeper'&&!shopId)return res.status(400).json({error:'Shop ID is required for a shopkeeper account'});
+  if(application.type==='shopkeeper'&&!shopId)return res.status(400).json({error:'Shop ID is required for a shopkeeper'});
   if(shopId&&!await db.collection('shops').findOne({id:shopId,active:true}))return res.status(400).json({error:'Active shop not found'});
-  if(await db.collection<User>('users').findOne({username}))return res.status(409).json({error:'That login ID is already in use'});
-  const user:User={id:`u-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,name:application.fullName,email:application.email,phone:application.phone,username,role:application.type==='shopkeeper'?'shopkeeper':'employee',shopId:shopId||undefined,active:true,passwordHash:hashPassword(password)};
-  await createUser(user);
-  await db.collection('onboardingApplications').updateOne({referenceId:application.referenceId},{$set:{activatedAt:new Date().toISOString(),activatedBy:req.user!.id,userId:user.id}});
-  return res.status(201).json({user:{id:user.id,name:user.name,email:user.email,phone:user.phone,username:user.username,role:user.role,shopId:user.shopId,active:user.active},message:'Account activated. Share the login ID and password securely with the applicant.'});
+  const kind=application.type as 'shopkeeper'|'employee';
+  const loginId=`FC-${kind==='shopkeeper'?'SHOP':'EMP'}-${String(slot).padStart(4,'0')}`;
+  const pool=await db.collection<any>('partnerCredentialPool').findOne({kind,slot,active:true});
+  if(!pool)return res.status(404).json({error:'Credential slot not found'});
+  if(pool.assignedToId)return res.status(409).json({error:'That four-digit credential is already assigned'});
+  if(await db.collection<User>('users').findOne({username:loginId}))return res.status(409).json({error:'Credential login is already in use'});
+  const claimed=await claimPartnerCredential(kind,slot,application.referenceId);
+  if(!claimed)return res.status(409).json({error:'That credential was just assigned. Choose another four-digit number.'});
+  const password=(await listPartnerCredentialPool(kind)).find(item=>item.slot===slot)?.password;
+  if(!password) return res.status(503).json({error:'Credential password could not be recovered'});
+  const user:User={id:`u-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,name:application.fullName,email:application.email,phone:application.phone,username:loginId,role:kind,shopId:shopId||undefined,active:true,passwordHash:hashPassword(password)};
+  try {
+    await createUser(user);
+    await db.collection('onboardingApplications').updateOne({referenceId:application.referenceId},{$set:{activatedAt:new Date().toISOString(),activatedBy:req.user!.id,userId:user.id,credentialSlot:slot,loginId}});
+  } catch (error) {
+    await db.collection('partnerCredentialPool').updateOne({kind,slot,assignedToId:application.referenceId},{$unset:{assignedToId:'',assignedAt:''}});
+    throw error;
+  }
+  return res.status(201).json({ credentials:{ loginId, password, slot }, user:{id:user.id,name:user.name,role:user.role,shopId:user.shopId}, message:'Credential assigned. Share the login ID and password securely with the applicant.' });
+});
+
+admin.post('/onboarding/applications/:referenceId/activate', async (req,res) => {
+  return res.status(410).json({error:'Manual username/password activation has been replaced. Approve the application, then assign a four-digit credential from Partner Credentials.'});
 });
 
 admin.get('/sales-imports', async (_req,res)=>{const db=mongoDb();if(!db)return res.status(503).json({error:'MongoDB is required for CSV approvals'});const imports=await db.collection<SalesImport>('salesImports').find({status:'PENDING_REVIEW'}).sort({submittedAt:-1}).limit(100).project({csv:0}).toArray();return res.json(imports);});
