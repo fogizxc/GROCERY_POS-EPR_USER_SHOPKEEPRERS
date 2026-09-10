@@ -8,12 +8,17 @@ declare global {
   }
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const token = req.header('authorization')?.replace(/^Bearer\s+/i, '');
-  const user = getUserFromToken(token);
-  if (!user) return res.status(401).json({ error: 'Authentication required' });
-  req.user = user;
-  next();
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  try {
+    const token = req.header('authorization')?.replace(/^Bearer\s+/i, '');
+    const user = await getUserFromToken(token);
+    if (!user) return res.status(401).json({ error: 'Authentication required' });
+    req.user = user;
+    return next();
+  } catch (error) {
+    console.error(error);
+    return res.status(503).json({ error: 'Authentication service unavailable' });
+  }
 }
 
 export function requireRole(...roles: Role[]) {
