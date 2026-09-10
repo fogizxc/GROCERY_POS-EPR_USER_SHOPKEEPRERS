@@ -1,7 +1,7 @@
 import type { ClientSession, Filter, UpdateFilter } from 'mongodb';
 import type { Order, Product, User, Shop } from '../models/domain';
 import type { Address, DeliverySlot, Payment, DeliveryAssignment, Notification, Attendance, AuditLog } from '../models/catalog';
-import { mongoClient, mongoDb } from './mongodb';
+import { mongoClient, mongoDb } from './mongodb.ts';
 
 export async function findUser(identifier: string, role: string) { const db = mongoDb(); return db ? db.collection<User>('users').findOne({ $or: [{ email: identifier }, { phone: identifier }], role, active: true }) : null; }
 export async function findUserById(id: string) { const db = mongoDb(); return db ? db.collection<User>('users').findOne({ id, active: true }, { projection: { passwordHash: 0 } }) : null; }
