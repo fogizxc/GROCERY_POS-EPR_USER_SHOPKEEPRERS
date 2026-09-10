@@ -61,6 +61,18 @@ Expose these endpoints to your load balancer/container platform:
 
 Never commit `.env` or real payment/database credentials. Configure secrets in the hosting platform or CI/CD environment.
 
+## Admin catalog management
+
+Authenticated `admin` and `super_admin` users can manage the production catalog through:
+
+- `POST /api/admin/catalog/products`
+- `PATCH /api/admin/catalog/products/:id`
+- `PATCH /api/admin/catalog/products/:id/active`
+- `POST /api/admin/catalog/shops`
+- `PATCH /api/admin/catalog/shops/:id`
+
+Product writes validate required catalog fields, non-negative stock/pricing and the MRP/selling-price relationship; MongoDB unique indexes protect SKU/barcode conflicts.
+
 ## Docker
 
 Build locally:
@@ -79,7 +91,7 @@ The image serves the built frontend and Express API from the same process. The c
 
 ## CI / release
 
-GitHub Actions performs the TypeScript/Vite build and production Docker build on pushes and pull requests to `main`. The release workflow publishes the production image to GHCR on `main` and records the immutable image digest in the workflow summary.
+GitHub Actions performs regression tests, the TypeScript/Vite build and production Docker build on pushes and pull requests to `main`. The release workflow publishes the production image to GHCR on `main` and records the immutable image digest in the workflow summary.
 
 The release workflow pins its Docker publishing actions to immutable commit SHAs.
 
