@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, ChevronRight, Clock3, Package, RotateCcw, Truck, X } from 'lucide-react';
 import { api, type ApiOrder, type OrderStatus } from '../services/api';
+import { addItemsToCart } from '../services/cart';
 
 const steps: { status: OrderStatus; label: string }[] = [
   { status: 'PLACED', label: 'Order placed' },
@@ -44,10 +45,14 @@ export function CustomerOrders({ flash }: { flash: (message: string) => void }) 
       const result = await api.reorder(order.id);
       if (result.unavailable.length) {
         setUnavailable(result.unavailable);
-        flash(`${result.unavailable.length} item${result.unavailable.length > 1 ? 's are' : ' is'} unavailable`);
-      } else flash('Everything from this order is available to reorder');
+      }
       if (result.items.length) {
-        flash(`${result.items.length} item${result.items.length > 1 ? 's' : ''} ready to add to cart`);
+        addItemsToCart(result.items);
+        flash(`${result.items.length} item${result.items.length > 1 ? 's' : ''} added to cart${result.unavailable.length ? ` · ${result.unavailable.length} unavailable` : ''}`);
+      } else if (result.unavailable.length) {
+        flash(`${result.unavailable.length} item${result.unavailable.length > 1 ? 's are' : ' is'} unavailable`);
+      } else {
+        flash('This order has no available items to reorder');
       }
     } catch (e) { flash(e instanceof Error ? e.message : 'Reorder failed'); }
     finally { setBusy(''); }
@@ -63,11 +68,12 @@ export function CustomerOrders({ flash }: { flash: (message: string) => void }) 
     {!orders.length ? <div className="mt-6 rounded-3xl bg-white p-8 text-center shadow-sm"><Package className="mx-auto text-[#6d947d]" size={34}/><h3 className="mt-3 font-extrabold text-[#173d2e]">No orders yet</h3><p className="mt-1 text-sm text-[#7a8881]">Your completed purchases will appear here.</p></div> :
       <div className="mt-6 grid gap-4 lg:grid-cols-2">{orders.map(order => {
         const active = order.status !== 'DELIVERED' && order.status !== 'CANCELLED';
+        const cancellable = order.status === 'PLACED' || order.status === 'ACCEPTED';
         return <article key={order.id} className="rounded-3xl bg-white p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3"><div><div className="text-xs font-bold text-[#89958e]">{order.id}</div><h3 className="mt-1 font-extrabold text-[#173d2e]">₹{order.total.toFixed(0)} · {order.items.length} item{order.items.length === 1 ? '' : 's'}</h3></div><span className={`rounded-full px-3 py-1 text-[10px] font-extrabold ${order.status === 'CANCELLED' ? 'bg-[#fff0f0] text-[#a34f4f]' : 'bg-[#eaf3eb] text-[#3c7358]'}`}>{statusLabel(order.status)}</span></div>
           <div className="mt-4 rounded-2xl bg-[#f7f8f3] p-4"><div className="flex items-center gap-2 text-xs font-bold text-[#64736b]"><Clock3 size={15}/> {new Date(order.createdAt).toLocaleString()}</div><div className="mt-4 flex items-center gap-1">{steps.slice(0, 7).map((step, index) => <div key={step.status} className={`h-1.5 flex-1 rounded-full ${rank(order.status) >= index && order.status !== 'CANCELLED' ? 'bg-[#4f8a69]' : 'bg-[#dce2dc]'}`} />)}</div><div className="mt-2 flex justify-between text-[9px] font-bold text-[#7c8982]"><span>Placed</span><span>Delivery</span><span>Done</span></div></div>
           <div className="mt-4 grid grid-cols-2 gap-2">{order.items.slice(0, 4).map(item => <div key={`${order.id}-${item.productId}`} className="rounded-xl bg-[#fafbf8] px-3 py-2 text-xs font-semibold text-[#526159]">{item.name} × {item.quantity}</div>)}</div>
-          <div className="mt-4 flex flex-wrap gap-2"><button onClick={() => { setSelected(order); setUnavailable([]); }} className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-[#173d2e] px-4 py-3 text-xs font-extrabold text-white"><Truck size={15}/> {active ? 'Track order' : 'View order'} <ChevronRight size={14}/></button><button onClick={() => void reorder(order)} disabled={busy === order.id} className="flex items-center justify-center gap-1 rounded-xl border border-[#dce5dd] px-4 py-3 text-xs font-extrabold text-[#315245] disabled:opacity-50"><RotateCcw size={14}/> {busy === order.id ? 'Checking…' : 'Reorder'}</button></div>
+          <div className="mt-4 flex flex-wrap gap-2"><button onClick={() => { setSelected(order); setUnavailable([]); }} className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-[#173d2e] px-4 py-3 text-xs font-extrabold text-white"><Truck size={15}/> {active ? 'Track order' : 'View order'} <ChevronRight size={14}/></button>{cancellable&&<button onClick={async()=>{if(!window.confirm('Cancel this order?'))return;setBusy(order.id);try{await api.cancelOrder(order.id);flash('Order cancelled');await load();}catch(e){flash(e instanceof Error?e.message:'Unable to cancel order');}finally{setBusy('');}}} disabled={busy===order.id} className="flex items-center justify-center gap-1 rounded-xl border border-[#f0d8d8] px-4 py-3 text-xs font-extrabold text-[#9a5555] disabled:opacity-50"><X size={14}/> {busy===order.id?'Cancelling…':'Cancel'}</button>}<button onClick={() => void reorder(order)} disabled={busy === order.id} className="flex items-center justify-center gap-1 rounded-xl border border-[#dce5dd] px-4 py-3 text-xs font-extrabold text-[#315245] disabled:opacity-50"><RotateCcw size={14}/> {busy === order.id ? 'Working…' : 'Reorder'}</button></div>
         </article>;
       })}</div>}
 
