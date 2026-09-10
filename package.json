@@ -5,7 +5,7 @@
   "description": "FreshCart grocery ecommerce and shopkeeper ERP platform",
   "type": "module",
   "engines": {
-    "node": ">=22 <23"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "vite",
