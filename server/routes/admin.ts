@@ -3,9 +3,11 @@ import { products, orders, shops, users } from '../store/memoryStore';
 import { requireAuth, requireRole } from '../auth/middleware';
 import { mongoDb } from '../db/mongodb';
 import { findOrders, listProducts, listShops, listStaff } from '../db/repositories';
+import { adminCatalog } from './adminCatalog';
 
 export const admin = Router();
 admin.use(requireAuth, requireRole('admin', 'super_admin'));
+admin.use('/catalog', adminCatalog);
 
 admin.get('/dashboard', async (_req, res) => {
   if (mongoDb()) {
