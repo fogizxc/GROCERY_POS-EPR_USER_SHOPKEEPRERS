@@ -6,3 +6,4 @@ export interface Product { id: string; sku: string; barcode?: string; name: stri
 export interface OrderItem { productId: string; name: string; quantity: number; unitPrice: number; }
 export interface Order { id: string; customerId: string; shopId: string; items: OrderItem[]; subtotal: number; deliveryFee: number; total: number; paymentMethod: 'UPI' | 'CARD' | 'COD'; status: OrderStatus; createdAt: string; addressId?: string; deliverySlotId?: string; idempotencyKey?: string; }
 export interface Shop { id: string; name: string; address: string; active: boolean; }
+export interface SalesImport { referenceId: string; shopId: string; fileName: string; csv: string; rowCount: number; status: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED'; submittedBy: string; submittedAt: string; reviewedBy?: string; reviewedAt?: string; rejectionReason?: string; }
