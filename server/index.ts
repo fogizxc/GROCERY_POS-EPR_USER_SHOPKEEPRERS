@@ -4,6 +4,7 @@ import cors from 'cors';
 import { api } from './routes/api';
 import { auth } from './routes/auth';
 import { bootstrap } from './routes/bootstrap';
+import { customer } from './routes/customer';
 import { admin } from './routes/admin';
 import { shopkeeper } from './routes/shopkeeper';
 import { delivery } from './routes/delivery';
@@ -29,6 +30,7 @@ app.get('/api/config', (_req, res) => {
 });
 app.use('/api/auth', auth);
 app.use('/api/bootstrap', bootstrap);
+app.use('/api/customer', customer);
 app.use('/api', api);
 app.use('/api/admin', admin);
 app.use('/api/shopkeeper', shopkeeper);
