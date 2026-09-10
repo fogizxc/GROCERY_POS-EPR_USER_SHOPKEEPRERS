@@ -1,14 +1,23 @@
 import { Router } from 'express';
 import type { Role } from '../models/domain';
-import { getSession, signIn, signOut } from '../auth/auth';
+import { getSession, signIn } from '../auth/auth';
 
 export const auth = Router();
+const roles: Role[] = ['customer', 'shopkeeper', 'employee', 'store_manager', 'admin', 'super_admin'];
 
 auth.post('/login', (req, res) => {
   const { identifier, role } = req.body ?? {};
-  const session = signIn(String(identifier ?? ''), role as Role);
-  if (!session) return res.status(401).json({ error: 'Invalid account or role' });
-  res.json({ token: session.token, user: session.user, expiresAt: session.expiresAt });
+  if (typeof identifier !== 'string' || !identifier.trim() || !roles.includes(role as Role)) {
+    return res.status(400).json({ error: 'identifier and a valid role are required' });
+  }
+  try {
+    const session = signIn(identifier, role as Role);
+    if (!session) return res.status(401).json({ error: 'Invalid account or role' });
+    return res.json({ token: session.token, user: session.user, expiresAt: session.expiresAt });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Authentication service unavailable' });
+  }
 });
 
 auth.get('/me', (req, res) => {
@@ -17,7 +26,4 @@ auth.get('/me', (req, res) => {
   return session ? res.json(session.user) : res.status(401).json({ error: 'Authentication required' });
 });
 
-auth.post('/logout', (req, res) => {
-  signOut(req.header('authorization')?.replace(/^Bearer\s+/i, ''));
-  res.status(204).send();
-});
+auth.post('/logout', (_req, res) => res.status(204).send());
