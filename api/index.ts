@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { app } from '../server/index';
-import { connectMongo } from '../server/db/mongodb';
+import { app } from '../server/index.ts';
+import { connectMongo } from '../server/db/mongodb.ts';
 
 let mongoReady: Promise<unknown> | null = null;
 
