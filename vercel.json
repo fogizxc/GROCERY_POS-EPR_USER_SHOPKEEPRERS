@@ -1,11 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run vercel-build",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
   "functions": {
     "api/[...path].ts": {
-      "runtime": "nodejs22.x",
       "maxDuration": 30
     }
   },
