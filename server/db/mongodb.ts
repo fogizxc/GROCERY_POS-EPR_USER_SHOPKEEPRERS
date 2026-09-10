@@ -16,6 +16,7 @@ export async function connectMongo() {
 }
 
 export function mongoDb() { return db; }
+export function mongoClient() { return client; }
 
 export async function closeMongo() {
   if (client) await client.close();
