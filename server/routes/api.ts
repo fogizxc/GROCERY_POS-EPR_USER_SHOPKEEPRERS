@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { addresses, deliverySlots, orders, payments, products, shops } from '../store/memoryStore';
+import { addresses, deliverySlots, orders, payments, products, shops, users } from '../store/memoryStore';
 import type { Address, Payment } from '../models/catalog';
 import type { OrderStatus } from '../models/domain';
 import { requireAuth } from '../auth/middleware';
-import { listProducts, listShops, listAddresses, insertAddress, listDeliverySlots, createOrderTransaction, cancelOrderTransaction, findOrders, updateOrderStatus } from '../db/repositories';
+import { listProducts, listShops, listAddresses, insertAddress, listDeliverySlots, createOrderTransaction, cancelOrderTransaction, findOrders, findUserById, updateOrderStatus } from '../db/repositories';
 import { mongoDb } from '../db/mongodb';
 
 export const api = Router();
@@ -24,10 +24,16 @@ api.get('/shops', async (_req, res) => {
   return res.json(shops.filter(s => s.active));
 });
 
-api.get('/users/:id', requireAuth, (req, res) => {
+api.get('/users/:id', requireAuth, async (req, res) => {
   if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin' && req.user?.id !== req.params.id) return res.status(403).json({ error: 'Insufficient permissions' });
-  const user = require('../store/memoryStore').users.find((u: { id: string }) => u.id === req.params.id);
-  return user ? res.json(user) : res.status(404).json({ error: 'User not found' });
+  if (mongoDb()) {
+    const user = await findUserById(req.params.id);
+    return user ? res.json(user) : res.status(404).json({ error: 'User not found' });
+  }
+  const user = users.find(item => item.id === req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const { passwordHash: _passwordHash, ...publicUser } = user;
+  return res.json(publicUser);
 });
 
 api.get('/addresses', requireAuth, async (req, res) => {
@@ -87,7 +93,7 @@ api.post('/orders', requireAuth, async (req, res) => {
       const existing = await db.collection<import('../models/domain').Order>('orders').findOne({ customerId: req.user.id, idempotencyKey });
       if (existing) {
         const payment = await db.collection<Payment>('payments').findOne({ orderId: existing.id });
-        const address = await db.collection<Address>('addresses').findOne({ id: addressId, userId: req.user.id });
+        const address = await db.collection<Address>('addresses').findOne({ id: existing.id ? (await db.collection<import('../models/catalog').Address>('addresses').findOne({ id: existing.id, userId: req.user.id }))?.id : '', userId: req.user.id });
         const slot = existing.deliverySlotId ? await db.collection<import('../models/catalog').DeliverySlot>('deliverySlots').findOne({ id: existing.deliverySlotId }) : null;
         return res.status(200).json({ ...existing, ...(address ? { address } : {}), ...(slot ? { deliverySlot: slot } : {}), ...(payment ? { payment } : {}) });
       }
@@ -147,10 +153,12 @@ api.patch('/orders/:id/status', requireAuth, async (req, res) => {
       catch (error) { return res.status(409).json({ error: error instanceof Error ? error.message : 'Unable to cancel order' }); }
     }
     if (!canManage) return res.status(403).json({ error: 'Insufficient permissions' });
-    const updated = await updateOrderStatus(order.id, status); return res.json(updated);
+    try { const updated = await updateOrderStatus(order.id, status); return updated ? res.json(updated) : res.status(404).json({ error: 'Order not found' }); }
+    catch (error) { return res.status(409).json({ error: error instanceof Error ? error.message : 'Unable to update order status' }); }
   }
   const order = orders.find(o => o.id === req.params.id); if (!order) return res.status(404).json({ error: 'Order not found' });
   const isAdmin = req.user?.role === 'admin' || req.user?.role === 'super_admin'; const canManage = isAdmin || (['shopkeeper', 'employee', 'store_manager'].includes(req.user?.role ?? '') && req.user?.shopId === order.shopId);
+  const memoryTransitions: Record<OrderStatus, readonly OrderStatus[]> = { PLACED: ['ACCEPTED', 'CANCELLED'], ACCEPTED: ['PICKING', 'CANCELLED'], PICKING: ['PACKING'], PACKING: ['READY'], READY: ['OUT_FOR_DELIVERY'], OUT_FOR_DELIVERY: ['DELIVERED'], DELIVERED: [], CANCELLED: [] };
   if (status === 'CANCELLED') {
     if (!canManage && !(req.user?.role === 'customer' && req.user.id === order.customerId)) return res.status(403).json({ error: 'Insufficient permissions' });
     if (order.status === 'CANCELLED') return res.json(order);
@@ -160,7 +168,10 @@ api.patch('/orders/:id/status', requireAuth, async (req, res) => {
     const payment = payments.find(item => item.orderId === order.id); if (payment) payment.status = order.paymentMethod === 'COD' ? 'CANCELLED' : 'REFUND_PENDING';
     order.status = 'CANCELLED'; return res.json(order);
   }
-  if (!canManage) return res.status(403).json({ error: 'Insufficient permissions' }); order.status = status; return res.json(order);
+  if (!canManage) return res.status(403).json({ error: 'Insufficient permissions' });
+  if (order.status === status) return res.json(order);
+  if (!memoryTransitions[order.status].includes(status)) return res.status(409).json({ error: `Invalid order status transition: ${order.status} -> ${status}` });
+  order.status = status; return res.json(order);
 });
 
 api.patch('/products/:id/stock', requireAuth, async (req, res) => {
