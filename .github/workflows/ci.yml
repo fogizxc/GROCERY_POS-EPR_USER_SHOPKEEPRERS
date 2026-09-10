@@ -12,7 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - name: Use Node.js
@@ -23,3 +23,5 @@ jobs:
         run: npm install
       - name: Build frontend and server
         run: npm run build
+      - name: Build production container
+        run: docker build --tag freshcart:${{ github.sha }} .
