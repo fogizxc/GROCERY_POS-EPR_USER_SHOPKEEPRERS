@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react';
-import { ArrowRight, Eye, EyeOff, Leaf, LockKeyhole, Mail, Phone, UserRound } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, Facebook, Instagram, Leaf, Linkedin, LockKeyhole, Mail, MessageCircle, Phone, UserRound, Youtube } from 'lucide-react';
 import { api } from '../services/api';
 
 interface AuthScreenProps { onAuthenticated: () => void; }
@@ -52,7 +52,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         </section>
 
         <section className="p-6 sm:p-10 lg:p-12">
-          <div className="mx-auto max-w-md">
+          <div className="mx-auto flex h-full max-w-md flex-col">
             <div className="flex items-center gap-3 lg:hidden"><div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#173d2e] text-lg">🌿</div><span className="text-lg font-extrabold text-[#173d2e]">FreshCart</span></div>
             <div className="mt-10 lg:mt-4"><p className="text-xs font-extrabold uppercase tracking-[.16em] text-[#819087]">Secure workspace</p><h2 className="heading mt-2 text-3xl font-extrabold text-[#173d2e]">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2></div>
 
@@ -69,7 +69,19 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               <button disabled={saving} className="flex w-full items-center justify-center rounded-2xl bg-[#173d2e] px-5 py-3.5 text-sm font-extrabold text-white transition hover:bg-[#24523e] disabled:opacity-50">{saving?'Please wait…':mode==='login'?'Sign in securely':'Create customer account'}{!saving&&<ArrowRight size={16} className="ml-2"/>}</button>
             </form>
 
-            <div className="mt-6 text-center text-xs text-[#7a8981]">{mode==='login'?"Don't have a customer account?":"Already have an account?"} <button type="button" onClick={()=>switchMode(mode==='login'?'register':'login')} className="font-extrabold text-[#356c51]">{mode==='login'?'Create one':'Sign in'}</button></div>
+            <div className="mt-auto pt-10">
+              <div className="flex items-center justify-center gap-2">
+                <a href="#" aria-label="YouTube" title="YouTube" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]"><Youtube size={14}/></a>
+                <a href="#" aria-label="Instagram" title="Instagram" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]"><Instagram size={14}/></a>
+                <a href="#" aria-label="Facebook" title="Facebook" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]"><Facebook size={14}/></a>
+                <a href="#" aria-label="X" title="X" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[13px] font-black text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]">X</a>
+                <a href="#" aria-label="LinkedIn" title="LinkedIn" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]"><Linkedin size={14}/></a>
+                <a href="#" aria-label="WhatsApp" title="WhatsApp" className="flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#fafbf8] text-[#5e6c65] transition hover:-translate-y-0.5 hover:bg-[#f0f3ec]"><MessageCircle size={14}/></a>
+              </div>
+              <div className="mt-3 text-center text-[10px] font-semibold tracking-wide text-[#a0aaa4]">FreshCart • Fresh groceries, delivered simply</div>
+            </div>
+
+            <div className="mt-5 text-center text-xs text-[#7a8981]">{mode==='login'?"Don't have a customer account?":"Already have an account?"} <button type="button" onClick={()=>switchMode(mode==='login'?'register':'login')} className="font-extrabold text-[#356c51]">{mode==='login'?'Create one':'Sign in'}</button></div>
           </div>
         </section>
       </div>
