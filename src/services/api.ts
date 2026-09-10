@@ -19,12 +19,42 @@ export interface ApiReorder { shopId: string; items: { productId: string; quanti
 export interface ApiOrderTimeline { status: OrderStatus; label: string; timestamp?: string; completed: boolean; current: boolean; }
 export interface ApiOrderDetail extends ApiOrder { address: ApiAddress; deliverySlot: ApiDeliverySlot; payment?: ApiPayment; timeline: ApiOrderTimeline[]; }
 export interface RazorpayCheckoutOrder { keyId: string; orderId: string; amount: number; currency: string; }
+export interface PartnerApplicationInput {
+  type: 'shopkeeper' | 'employee';
+  fullName: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  idProofType: string;
+  idProofNumber: string;
+  preferredCallAt: string;
+  consent: boolean;
+  businessName?: string;
+  businessType?: string;
+  gstin?: string;
+  pan?: string;
+  tradeLicense?: string;
+  fssaiLicense?: string;
+  establishmentYear?: string;
+  branches?: string;
+  qualification?: string;
+  experience?: string;
+  preferredRole?: string;
+  availability?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+}
+export interface PartnerApplicationResponse { referenceId: string; scheduledCallAt: string; status: string; }
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> { const token = localStorage.getItem('freshcart_token'); const headers = new Headers(options.headers); headers.set('Content-Type','application/json'); if(token) headers.set('Authorization',`Bearer ${token}`); const response = await fetch(`${API_BASE}${path}`,{...options,headers}); if(!response.ok){const body=await response.json().catch(()=>null) as {error?:string}|null;throw new Error(body?.error||`Request failed (${response.status})`);} if(response.status===204)return undefined as T; return response.json() as Promise<T>; }
 const query=(params?:Record<string,string|undefined>)=>{const entries=Object.entries(params??{}).filter(([,value])=>value) as [string,string][];return entries.length?`?${new URLSearchParams(entries)}`:'';};
 const createIdempotencyKey=()=>{if(typeof crypto!=='undefined'&&typeof crypto.randomUUID==='function')return crypto.randomUUID();return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;};
 export const api={
  login:async(identifier:string,password?:string)=>{const session=await request<{token:string;user:ApiUser;expiresAt:number}>('/auth/login',{method:'POST',body:JSON.stringify({identifier,...(password!==undefined?{password}: {})})});localStorage.setItem('freshcart_token',session.token);localStorage.setItem('freshcart_role',session.user.role);return session;},
  register:async(input:{name:string;email:string;phone:string;password:string})=>{const session=await request<{token:string;user:ApiUser;expiresAt:number}>('/auth/register',{method:'POST',body:JSON.stringify(input)});localStorage.setItem('freshcart_token',session.token);localStorage.setItem('freshcart_role',session.user.role);return session;},
+ submitPartnerApplication:(input:PartnerApplicationInput)=>request<PartnerApplicationResponse>('/onboarding/applications',{method:'POST',body:JSON.stringify(input)}),
  me:()=>request<ApiUser>('/auth/me'), logout:async()=>{await request<void>('/auth/logout',{method:'POST'});localStorage.removeItem('freshcart_token');},
  products:(params?:{shopId?:string;category?:string;q?:string})=>request<ApiProduct[]>(`/products${query(params)}`), shops:()=>request<ApiShop[]>('/shops'),
  addresses:()=>request<ApiAddress[]>('/addresses'), addAddress:(address:Omit<ApiAddress,'id'|'userId'>)=>request<ApiAddress>('/addresses',{method:'POST',body:JSON.stringify(address)}), deliverySlots:()=>request<ApiDeliverySlot[]>('/delivery-slots'),
