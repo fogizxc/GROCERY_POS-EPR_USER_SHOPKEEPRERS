@@ -37,7 +37,12 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
   return (
     <main className="min-h-screen bg-[#f7f7f2] px-4 py-8 sm:px-6">
-      <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-5xl overflow-hidden rounded-[32px] bg-white shadow-xl lg:grid-cols-2">
+      <div className="relative mx-auto grid min-h-[calc(100vh-4rem)] max-w-5xl overflow-hidden rounded-[32px] bg-white shadow-xl lg:grid-cols-2">
+        <div className="pointer-events-none absolute left-0 top-0 z-20 h-10 w-full overflow-hidden" aria-hidden="true">
+          <div className="absolute -top-1 left-0 text-3xl leading-none will-change-transform" style={{ animation: 'freshcartTomatoWalk 9s linear infinite' }}>🍅</div>
+        </div>
+        <style>{`@keyframes freshcartTomatoWalk{0%{transform:translateX(-56px)}100%{transform:translateX(calc(100vw - 16px))}}@media (min-width:1024px){@keyframes freshcartTomatoWalk{0%{transform:translateX(-56px)}100%{transform:translateX(930px)}}}`}</style>
+
         <section className="hidden bg-[#173d2e] p-10 text-white lg:flex lg:flex-col lg:justify-between">
           <div>
             <div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10"><Leaf size={22}/></div><span className="text-xl font-extrabold">FreshCart</span></div>
