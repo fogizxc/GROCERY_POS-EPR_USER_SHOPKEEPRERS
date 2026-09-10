@@ -30,7 +30,9 @@ auth.post('/register', async (req, res) => {
     if (existingMongo.some(Boolean) || users.some(u => u.active && (u.email.toLowerCase() === normalizedEmail || u.phone === normalizedPhone))) return res.status(409).json({ error: 'An account with this email or phone already exists' });
     const user: User = { id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: name.trim(), email: normalizedEmail, phone: normalizedPhone, role: 'customer', active: true, passwordHash: hashPassword(password) };
     if (process.env.MONGODB_URI) await createUser(user); else users.push(user);
-    return res.status(201).json(publicUser(user));
+    const session = await signIn(normalizedEmail, 'customer', password);
+    if (!session) return res.status(503).json({ error: 'Account created but sign-in could not be established' });
+    return res.status(201).json({ token: session.token, user: publicUser(session.user), expiresAt: session.expiresAt });
   } catch (error) { console.error(error); return res.status(503).json({ error: 'Unable to create account' }); }
 });
 
