@@ -17,13 +17,14 @@ customer.get('/orders', async (req, res) => { if (mongoDb()) return res.json(awa
 customer.get('/orders/:id', async (req, res) => {
   const order = mongoDb() ? await mongoDb()!.collection<import('../models/domain').Order>('orders').findOne({ id: req.params.id, customerId: req.user!.id }) : orders.find(item => item.id === req.params.id && item.customerId === req.user?.id);
   if (!order) return res.status(404).json({ error: 'Order not found' });
-  const statuses = ['PLACED', 'ACCEPTED', 'PICKING', 'PACKING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED'] as const; const current = statuses.indexOf(order.status as typeof statuses[number]);
-  return res.json({ ...order, timeline: statuses.map((status, index) => ({ status, label: status.replaceAll('_', ' '), completed: index <= current })) });
+  const statuses = ['PLACED', 'ACCEPTED', 'PICKING', 'PACKING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED'] as const;
+  const current = statuses.indexOf(order.status as typeof statuses[number]);
+  return res.json({ ...order, timeline: statuses.map((status, index) => ({ status, label: status.replaceAll('_', ' '), completed: index <= current, current: index === current })) });
 });
 
 customer.post('/orders/:id/reorder', async (req, res) => {
   const previous = mongoDb() ? await mongoDb()!.collection<import('../models/domain').Order>('orders').findOne({ id: req.params.id, customerId: req.user!.id }) : orders.find(item => item.id === req.params.id && item.customerId === req.user?.id);
   if (!previous) return res.status(404).json({ error: 'Order not found' });
-  if (mongoDb()) { const currentProducts = await listProducts(previous.shopId); const available = previous.items.map(item => { const product = currentProducts.find(p => p.id === item.productId); return product && product.stock >= item.quantity ? { productId: item.productId, quantity: item.quantity } : null; }); const unavailable = previous.items.filter((_item, index) => !available[index]); return res.json({ shopId: previous.shopId, items: available.filter(Boolean), unavailable: unavailable.map(item => item.name) }); }
-  const available = previous.items.map(item => { const product = products.find(p => p.id === item.productId && p.active && p.shopId === previous.shopId); return product && product.stock >= item.quantity ? { productId: item.productId, quantity: item.quantity } : null; }); const unavailable = previous.items.filter((_item, index) => !available[index]); return res.json({ shopId: previous.shopId, items: available.filter(Boolean), unavailable: unavailable.map(item => item.name) });
+  if (mongoDb()) { const currentProducts = await listProducts(previous.shopId); const available = previous.items.map(item => { const product = currentProducts.find(p => p.id === item.productId && p.active); return product && product.stock >= item.quantity ? { productId: item.productId, quantity: item.quantity } : null; }); const unavailable = previous.items.filter((_item, index) => !available[index]); return res.json({ shopId: previous.shopId, items: available.filter((item): item is { productId: string; quantity: number } => Boolean(item)), unavailable: unavailable.map(item => item.name) }); }
+  const available = previous.items.map(item => { const product = products.find(p => p.id === item.productId && p.active && p.shopId === previous.shopId); return product && product.stock >= item.quantity ? { productId: item.productId, quantity: item.quantity } : null; }); const unavailable = previous.items.filter((_item, index) => !available[index]); return res.json({ shopId: previous.shopId, items: available.filter((item): item is { productId: string; quantity: number } => Boolean(item)), unavailable: unavailable.map(item => item.name) });
 });
