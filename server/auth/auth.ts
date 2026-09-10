@@ -1,24 +1,34 @@
-import crypto from 'node:crypto';
 import type { Role, User } from '../models/domain';
 import { users } from '../store/memoryStore';
+import { signToken, verifyToken } from './jwt';
 
 export interface Session { token: string; user: User; expiresAt: number; }
-const sessions = new Map<string, Session>();
 
 export function signIn(identifier: string, role: Role): Session | null {
-  const user = users.find(u => u.active && (u.email === identifier || u.phone === identifier) && u.role === role);
+  const normalized = identifier.trim().toLowerCase();
+  const user = users.find(
+    u => u.active && (u.email.toLowerCase() === normalized || u.phone === identifier.trim()) && u.role === role,
+  );
   if (!user) return null;
-  const token = crypto.randomBytes(24).toString('hex');
-  const session = { token, user, expiresAt: Date.now() + 1000 * 60 * 60 * 12 };
-  sessions.set(token, session);
-  return session;
+  const token = signToken(user);
+  return { token, user, expiresAt: Date.now() + 1000 * 60 * 60 * 12 };
 }
 
-export function getSession(token?: string) {
+export function getUserFromToken(token?: string) {
   if (!token) return null;
-  const session = sessions.get(token);
-  if (!session || session.expiresAt < Date.now()) { if (session) sessions.delete(token); return null; }
-  return session;
+  const claims = verifyToken(token);
+  if (!claims) return null;
+  return users.find(u => u.active && u.id === claims.sub && u.role === claims.role) ?? null;
 }
 
-export function signOut(token?: string) { if (token) sessions.delete(token); }
+export function getSession(token?: string): Session | null {
+  const user = getUserFromToken(token);
+  if (!user || !token) return null;
+  const claims = verifyToken(token);
+  if (!claims) return null;
+  return { token, user, expiresAt: claims.exp * 1000 };
+}
+
+export function signOut(_token?: string) {
+  // JWT access tokens are stateless; clients discard the token on logout.
+}
