@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 export type Role = 'customer' | 'shopkeeper' | 'employee' | 'store_manager' | 'admin' | 'super_admin';
 export type PaymentMethod = 'UPI' | 'CARD' | 'COD';
 export type OrderStatus = 'PLACED' | 'ACCEPTED' | 'PICKING' | 'PACKING' | 'READY' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELLED';
@@ -19,7 +19,7 @@ export interface ApiReorder { shopId: string; items: { productId: string; quanti
 export interface ApiOrderTimeline { status: OrderStatus; label: string; timestamp?: string; completed: boolean; current: boolean; }
 export interface ApiOrderDetail extends ApiOrder { address: ApiAddress; deliverySlot: ApiDeliverySlot; payment?: ApiPayment; timeline: ApiOrderTimeline[]; }
 export interface RazorpayCheckoutOrder { keyId: string; orderId: string; amount: number; currency: string; }
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> { const token = localStorage.getItem('freshcart_token'); const headers = new Headers(options.headers); headers.set('Content-Type','application/json'); if(token) headers.set('Authorization',`Bearer ${token}`); const response = await fetch(`${API_BASE}/api${path}`,{...options,headers}); if(!response.ok){const body=await response.json().catch(()=>null) as {error?:string}|null;throw new Error(body?.error||`Request failed (${response.status})`);} if(response.status===204)return undefined as T; return response.json() as Promise<T>; }
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> { const token = localStorage.getItem('freshcart_token'); const headers = new Headers(options.headers); headers.set('Content-Type','application/json'); if(token) headers.set('Authorization',`Bearer ${token}`); const response = await fetch(`${API_BASE}${path}`,{...options,headers}); if(!response.ok){const body=await response.json().catch(()=>null) as {error?:string}|null;throw new Error(body?.error||`Request failed (${response.status})`);} if(response.status===204)return undefined as T; return response.json() as Promise<T>; }
 const query=(params?:Record<string,string|undefined>)=>{const entries=Object.entries(params??{}).filter(([,value])=>value) as [string,string][];return entries.length?`?${new URLSearchParams(entries)}`:'';};
 const createIdempotencyKey=()=>{if(typeof crypto!=='undefined'&&typeof crypto.randomUUID==='function')return crypto.randomUUID();return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;};
 export const api={
