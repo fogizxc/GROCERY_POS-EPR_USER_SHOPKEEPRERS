@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import path from 'node:path';
 import { api } from './routes/api';
 import { auth } from './routes/auth';
 import { bootstrap } from './routes/bootstrap';
@@ -55,6 +56,13 @@ app.use('/api/shopkeeper', shopkeeper);
 app.use('/api/delivery', delivery);
 app.use('/api/ops', ops);
 app.use('/api/payments', paymentsRouter);
+
+const frontendDist = path.resolve(process.cwd(), 'dist');
+app.use(express.static(frontendDist, { index: 'index.html', maxAge: isProduction ? '1d' : 0 }));
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/')) return next();
+  return res.sendFile(path.join(frontendDist, 'index.html'), error => error && next(error));
+});
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => { console.error(error); res.status(500).json({ error: 'Internal server error' }); });
 
