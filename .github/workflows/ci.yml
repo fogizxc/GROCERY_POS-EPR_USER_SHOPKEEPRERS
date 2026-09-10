@@ -12,16 +12,18 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - name: Use Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '20.x'
-          cache: npm
+          node-version: '20.19.5'
+          package-manager-cache: false
+      - name: Verify toolchain
+        run: node --version && npm --version
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
       - name: Run regression tests
         run: npm test
       - name: Build frontend and server
