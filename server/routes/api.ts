@@ -3,7 +3,7 @@ import { addresses, deliverySlots, orders, payments, products, shops } from '../
 import type { Address, Payment } from '../models/catalog';
 import type { OrderStatus } from '../models/domain';
 import { requireAuth } from '../auth/middleware';
-import { listProducts, listShops, listAddresses, insertAddress, listDeliverySlots, reserveProductsAndSlot, insertOrder, insertPayment, findOrders, updateOrderStatus } from '../db/repositories';
+import { listProducts, listShops, listAddresses, insertAddress, listDeliverySlots, createOrderTransaction, findOrders, updateOrderStatus } from '../db/repositories';
 import { mongoDb } from '../db/mongodb';
 
 export const api = Router();
@@ -39,8 +39,8 @@ api.get('/addresses', requireAuth, async (req, res) => {
 api.post('/addresses', requireAuth, async (req, res) => {
   if (req.user?.role !== 'customer') return res.status(403).json({ error: 'Only customers can manage addresses' });
   const { label = 'HOME', line1, line2, city, state, postalCode, landmark, isDefault = false } = req.body ?? {};
-  if (!line1 || !city || !state || !postalCode) return res.status(400).json({ error: 'line1, city, state and postalCode are required' });
-  const address: Address = { id: `addr-${Date.now()}`, userId: req.user.id, label, line1, line2, city, state, postalCode, landmark, isDefault: Boolean(isDefault) };
+  if (!['HOME', 'WORK', 'OTHER'].includes(label) || typeof line1 !== 'string' || typeof city !== 'string' || typeof state !== 'string' || typeof postalCode !== 'string' || !line1.trim() || !city.trim() || !state.trim() || !postalCode.trim()) return res.status(400).json({ error: 'Valid label, line1, city, state and postalCode are required' });
+  const address: Address = { id: `addr-${Date.now()}`, userId: req.user.id, label, line1: line1.trim(), line2: typeof line2 === 'string' ? line2.trim() : undefined, city: city.trim(), state: state.trim(), postalCode: postalCode.trim(), landmark: typeof landmark === 'string' ? landmark.trim() : undefined, isDefault: Boolean(isDefault) };
   if (mongoDb()) { if (!(await listAddresses(req.user.id)).length) address.isDefault = true; await insertAddress(address); return res.status(201).json(address); }
   const userAddresses = addresses.filter(item => item.userId === req.user!.id);
   if (address.isDefault) userAddresses.forEach(item => { item.isDefault = false; });
@@ -70,26 +70,41 @@ api.get('/orders', requireAuth, async (req, res) => {
 api.post('/orders', requireAuth, async (req, res) => {
   const { shopId, items, paymentMethod = 'COD', addressId, deliverySlotId } = req.body ?? {};
   if (req.user?.role !== 'customer') return res.status(403).json({ error: 'Only customers can place orders' });
-  if (!shopId || !Array.isArray(items) || !items.length || typeof addressId !== 'string' || typeof deliverySlotId !== 'string') return res.status(400).json({ error: 'shopId, items, addressId and deliverySlotId are required' });
+  if (typeof shopId !== 'string' || !shopId.trim() || !Array.isArray(items) || !items.length || items.length > 100 || typeof addressId !== 'string' || typeof deliverySlotId !== 'string') return res.status(400).json({ error: 'shopId, 1-100 items, addressId and deliverySlotId are required' });
   if (!['UPI', 'CARD', 'COD'].includes(paymentMethod)) return res.status(400).json({ error: 'Invalid payment method' });
+  const normalizedInput = items.map((raw: unknown) => {
+    const item = raw as { productId?: unknown; quantity?: unknown };
+    const productId = typeof item.productId === 'string' ? item.productId.trim() : '';
+    const quantity = Number(item.quantity);
+    return { productId, quantity };
+  });
+  if (normalizedInput.some(item => !item.productId || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 100) || new Set(normalizedInput.map(item => item.productId)).size !== normalizedInput.length) return res.status(400).json({ error: 'Each product must have a unique integer quantity between 1 and 100' });
   if (mongoDb()) {
     const address = await mongoDb()!.collection<Address>('addresses').findOne({ id: addressId, userId: req.user.id });
     if (!address) return res.status(400).json({ error: 'Valid delivery address is required' });
-    const reserved = await reserveProductsAndSlot(shopId, items.map((item: { productId: string; quantity: number }) => ({ productId: item.productId, quantity: Number(item.quantity) })), deliverySlotId);
-    if (!reserved.slot || reserved.products.length !== items.length) return res.status(400).json({ error: 'Products or delivery slot became unavailable' });
-    const orderItems = reserved.products.map((product, index) => ({ productId: product.id, name: product.name, quantity: Number(items[index].quantity), unitPrice: product.sellingPrice }));
-    const subtotal = orderItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    const orderId = `FC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const orderItems = normalizedInput.map(item => ({ productId: item.productId, name: '', quantity: item.quantity, unitPrice: 0 }));
+    const order = { id: orderId, customerId: req.user.id, shopId: shopId.trim(), items: orderItems, subtotal: 0, deliveryFee: 0, total: 0, paymentMethod: paymentMethod as 'UPI' | 'CARD' | 'COD', status: 'PLACED' as const, createdAt: new Date().toISOString() };
+    const dbProducts = await mongoDb()!.collection<import('../models/domain').Product>('products').find({ id: { $in: normalizedInput.map(item => item.productId) }, shopId: order.shopId, active: true }).toArray();
+    if (dbProducts.length !== normalizedInput.length) return res.status(400).json({ error: 'One or more products are unavailable' });
+    const orderProductMap = new Map(dbProducts.map(product => [product.id, product]));
+    const completeItems = normalizedInput.map(item => { const product = orderProductMap.get(item.productId)!; return { productId: product.id, name: product.name, quantity: item.quantity, unitPrice: product.sellingPrice }; });
+    const subtotal = completeItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
     const deliveryFee = subtotal >= 499 ? 0 : 39;
-    const order = { id: `FC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, customerId: req.user.id, shopId, items: orderItems, subtotal, deliveryFee, total: subtotal + deliveryFee, paymentMethod: paymentMethod as 'UPI' | 'CARD' | 'COD', status: 'PLACED' as const, createdAt: new Date().toISOString() };
+    order.items = completeItems; order.subtotal = subtotal; order.deliveryFee = deliveryFee; order.total = subtotal + deliveryFee;
     const payment: Payment = { id: `pay-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, orderId: order.id, method: order.paymentMethod, status: 'PENDING', amount: order.total, provider: order.paymentMethod === 'COD' ? undefined : 'pending', createdAt: new Date().toISOString() };
-    await insertOrder(order); await insertPayment(payment);
-    return res.status(201).json({ ...order, address, deliverySlot: reserved.slot, payment });
+    try {
+      const result = await createOrderTransaction(order, payment, normalizedInput, deliverySlotId);
+      return res.status(201).json({ ...result.order, address, deliverySlot: result.slot, payment: result.payment });
+    } catch (error) {
+      return res.status(400).json({ error: error instanceof Error ? error.message : 'Unable to place order' });
+    }
   }
   const address = addresses.find(item => item.id === addressId && item.userId === req.user!.id);
   const slot = deliverySlots.find(item => item.id === deliverySlotId && item.active);
   if (!address) return res.status(400).json({ error: 'Valid delivery address is required' });
   if (!slot || slot.booked >= slot.capacity) return res.status(400).json({ error: 'Delivery slot is unavailable' });
-  const normalizedItems = items.map((i: unknown) => { const item = i as { productId?: unknown; quantity?: unknown }; const productId = typeof item.productId === 'string' ? item.productId : ''; const quantity = Number(item.quantity); const product = products.find(p => p.id === productId && p.active && p.shopId === shopId); if (!product || !Number.isInteger(quantity) || quantity < 1 || product.stock < quantity) return null; return { product, quantity }; });
+  const normalizedItems = normalizedInput.map(item => { const product = products.find(p => p.id === item.productId && p.active && p.shopId === shopId); if (!product || product.stock < item.quantity) return null; return { product, quantity: item.quantity }; });
   if (normalizedItems.some(item => item === null)) return res.status(400).json({ error: 'One or more products are unavailable or have insufficient stock' });
   const orderItems = normalizedItems.map(item => ({ productId: item!.product.id, name: item!.product.name, quantity: item!.quantity, unitPrice: item!.product.sellingPrice }));
   const subtotal = orderItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0); const deliveryFee = subtotal >= 499 ? 0 : 39;
