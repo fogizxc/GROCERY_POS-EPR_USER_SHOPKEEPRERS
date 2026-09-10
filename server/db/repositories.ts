@@ -1,7 +1,7 @@
-import type { Filter, UpdateFilter } from 'mongodb';
+import type { ClientSession, Filter, UpdateFilter } from 'mongodb';
 import type { Order, Product, User, Shop } from '../models/domain';
 import type { Address, DeliverySlot, Payment, DeliveryAssignment, Notification, Attendance, AuditLog } from '../models/catalog';
-import { mongoDb } from './mongodb';
+import { mongoClient, mongoDb } from './mongodb';
 
 export async function findUser(identifier: string, role: string) { const db = mongoDb(); return db ? db.collection<User>('users').findOne({ $or: [{ email: identifier }, { phone: identifier }], role, active: true }) : null; }
 export async function listProducts(shopId?: string, category?: string, q?: string) { const db = mongoDb(); if (!db) return []; const filter: Filter<Product> = { active: true, ...(shopId ? { shopId } : {}), ...(category ? { category } : {}) }; if (q) filter.$text = { $search: q }; return db.collection<Product>('products').find(filter).toArray(); }
@@ -11,6 +11,39 @@ export async function listAddresses(userId: string) { const db = mongoDb(); retu
 export async function insertAddress(address: Address) { const db = mongoDb(); if (!db) return; if (address.isDefault) await db.collection<Address>('addresses').updateMany({ userId: address.userId }, { $set: { isDefault: false } }); await db.collection<Address>('addresses').insertOne(address); }
 export async function listDeliverySlots() { const db = mongoDb(); return db ? db.collection<DeliverySlot>('deliverySlots').find({ active: true, $expr: { $lt: ['$booked', '$capacity'] } }).sort({ date: 1, startTime: 1 }).toArray() : []; }
 export async function reserveProductsAndSlot(shopId: string, items: Array<{ productId: string; quantity: number }>, slotId: string) { const db = mongoDb(); if (!db) return { products: [], slot: null }; const products: Product[] = []; for (const item of items) { const result = await db.collection<Product>('products').findOneAndUpdate({ id: item.productId, shopId, active: true, stock: { $gte: item.quantity } }, { $inc: { stock: -item.quantity } } as UpdateFilter<Product>, { returnDocument: 'after' }); if (!result) { for (const reserved of items.slice(0, products.length)) await db.collection<Product>('products').updateOne({ id: reserved.productId, shopId }, { $inc: { stock: reserved.quantity } }); return { products: [], slot: null }; } products.push(result); } const slot = await db.collection<DeliverySlot>('deliverySlots').findOneAndUpdate({ id: slotId, active: true, $expr: { $lt: ['$booked', '$capacity'] } }, { $inc: { booked: 1 } }, { returnDocument: 'after' }); if (!slot) { for (const item of items) await db.collection<Product>('products').updateOne({ id: item.productId, shopId }, { $inc: { stock: item.quantity } }); return { products: [], slot: null }; } return { products, slot }; }
+
+export async function createOrderTransaction(order: Order, payment: Payment, items: Array<{ productId: string; quantity: number }>, slotId: string) {
+  const db = mongoDb(); const client = mongoClient();
+  if (!db || !client) throw new Error('MongoDB is not connected');
+  const session = client.startSession();
+  try {
+    let result: { order: Order; payment: Payment; slot: DeliverySlot } | null = null;
+    await session.withTransaction(async () => {
+      const products: Product[] = [];
+      for (const item of items) {
+        const updated = await db.collection<Product>('products').findOneAndUpdate(
+          { id: item.productId, shopId: order.shopId, active: true, stock: { $gte: item.quantity } },
+          { $inc: { stock: -item.quantity } } as UpdateFilter<Product>,
+          { returnDocument: 'after', session },
+        );
+        if (!updated) throw new Error('One or more products became unavailable');
+        products.push(updated);
+      }
+      const slot = await db.collection<DeliverySlot>('deliverySlots').findOneAndUpdate(
+        { id: slotId, active: true, $expr: { $lt: ['$booked', '$capacity'] } },
+        { $inc: { booked: 1 } },
+        { returnDocument: 'after', session },
+      );
+      if (!slot) throw new Error('Delivery slot became unavailable');
+      await db.collection<Order>('orders').insertOne(order, { session });
+      await db.collection<Payment>('payments').insertOne(payment, { session });
+      result = { order, payment, slot };
+    });
+    if (!result) throw new Error('Order transaction failed');
+    return result;
+  } finally { await session.endSession(); }
+}
+
 export async function insertOrder(order: Order) { const db = mongoDb(); if (db) await db.collection<Order>('orders').insertOne(order); }
 export async function insertPayment(payment: Payment) { const db = mongoDb(); if (db) await db.collection<Payment>('payments').insertOne(payment); }
 export async function findOrders(filter: Filter<Order> = {}) { const db = mongoDb(); return db ? db.collection<Order>('orders').find(filter).sort({ createdAt: -1 }).toArray() : []; }
