@@ -12,9 +12,7 @@ export async function signIn(identifier: string, password?: string): Promise<Ses
   const normalized = identifier.trim().toLowerCase();
   const matches = await Promise.all(loginRoles.map(role => findUser(normalized, role)));
   let user = matches.find(Boolean) as User | null;
-  if (!user) {
-    user = users.find(u => u.active && (u.email.toLowerCase() === normalized || u.phone === identifier.trim())) ?? null;
-  }
+  if (!user) user = users.find(u => u.active && (u.email.toLowerCase() === normalized || u.phone === identifier.trim() || (u.username?.toLowerCase() === normalized))) ?? null;
   if (!user) return null;
 
   const production = process.env.NODE_ENV === 'production';
