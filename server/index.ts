@@ -33,13 +33,13 @@ app.get('/api', (_req, res) => res.status(200).json({ ok: true, service: 'freshc
 app.get('/ready', (_req, res) => { const ready = Boolean(mongoDb()); return res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready', database: ready ? 'connected' : 'disconnected' }); });
 app.get('/api/config', (_req, res) => res.json({ databaseConfigured: Boolean(process.env.MONGODB_URI), environment: process.env.NODE_ENV ?? 'development' }));
 
-// Vercel does not run the long-lived start() function. Initialize the cached
-// MongoDB connection before API routes so every serverless invocation sees
-// the real database and the admin portal can load the data that was submitted.
-app.use(async (_req, res, next) => {
+// MongoDB is opportunistic on Vercel. A database outage must not prevent
+// authentication or dashboard routes that have safe fallback behavior.
+app.use(async (_req, _res, next) => {
   if (!process.env.VERCEL || mongoDb()) return next();
-  try { await connectMongo(); next(); }
-  catch (error) { console.error('MongoDB request initialization failed:', error); next(error); }
+  try { await connectMongo(); }
+  catch (error) { console.error('MongoDB request initialization failed:', error); }
+  next();
 });
 
 app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 240 }));
