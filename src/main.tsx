@@ -5,6 +5,7 @@ import App from './App';
 import { AuthScreen } from './components/AuthScreen';
 import { AdminDeliveryPricingOverlay } from './components/AdminDeliveryPricingOverlay';
 import { PartnerCredentialManager } from './components/PartnerCredentialManager';
+import { SuperAdminPortal } from './components/SuperAdminPortal';
 import { SuperAdminAccounts } from './components/SuperAdminAccounts';
 import './index.css';
 
@@ -28,6 +29,8 @@ function redirectToSuperAdmin() {
 function AppGate() {
   const isSuperPortal = window.location.pathname.startsWith('/super-admin');
   const [authenticated, setAuthenticated] = useState(() => Boolean(localStorage.getItem('freshcart_token')));
+  const [showAccounts, setShowAccounts] = useState(false);
+
   useEffect(() => { void fetch('/api/health', { cache: 'no-store' }).catch(() => undefined); }, []);
   useEffect(() => { if (authenticated && readRoleFromToken() === 'super_admin' && !isSuperPortal) { redirectToSuperAdmin(); window.location.reload(); } }, [authenticated, isSuperPortal]);
 
@@ -36,12 +39,12 @@ function AppGate() {
   const role = readRoleFromToken();
   if (role === 'super_admin') {
     if (!isSuperPortal) { redirectToSuperAdmin(); window.location.reload(); return null; }
-    return <SuperAdminAccounts onLogout={() => { localStorage.removeItem('freshcart_token'); localStorage.removeItem('freshcart_role'); setAuthenticated(false); }} />;
+    if (showAccounts) {
+      return <div className="relative min-h-screen"><SuperAdminAccounts onLogout={() => { localStorage.removeItem('freshcart_token'); localStorage.removeItem('freshcart_role'); setAuthenticated(false); }} /><button onClick={() => setShowAccounts(false)} className="fixed bottom-5 right-5 z-50 rounded-2xl border border-white/10 bg-[#101c17] px-4 py-3 text-xs font-black text-white shadow-xl">← BACK TO OWNER TABS</button></div>;
+    }
+    return <div className="relative"><SuperAdminPortal onLogout={() => { localStorage.removeItem('freshcart_token'); localStorage.removeItem('freshcart_role'); setAuthenticated(false); }} /><button onClick={() => setShowAccounts(true)} className="fixed bottom-5 right-5 z-50 rounded-2xl bg-[#d7ef8d] px-4 py-3 text-xs font-black text-[#10251b] shadow-xl">SHOPKEEPERS & EMPLOYEES</button></div>;
   }
-  if (isSuperPortal) {
-    localStorage.removeItem('freshcart_token'); localStorage.removeItem('freshcart_role');
-    return <AuthScreen onAuthenticated={() => { const nextRole = readRoleFromToken(); if (nextRole === 'super_admin') { localStorage.setItem('freshcart_role', nextRole); setAuthenticated(true); } else { localStorage.removeItem('freshcart_token'); localStorage.removeItem('freshcart_role'); window.location.reload(); } }} />;
-  }
+  if (isSuperPortal) { localStorage.removeItem('freshcart_token'); localStorage.removeItem('freshcart_role'); return <AuthScreen onAuthenticated={() => { const nextRole = readRoleFromToken(); if (nextRole === 'super_admin') { localStorage.setItem('freshcart_role', nextRole); setAuthenticated(true); } else { localStorage.removeItem('freshcart_token'); localStorage.removeItem('freshcart_role'); window.location.reload(); } }} />; }
   localStorage.setItem('freshcart_role', role);
   return <><App />{role === 'admin' && <><AdminDeliveryPricingOverlay /><PartnerCredentialManager /></>}</>;
 }
