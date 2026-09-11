@@ -15,6 +15,7 @@ import { paymentsRouter, paymentWebhook } from './routes/payments.ts';
 import { onboarding } from './routes/onboarding.ts';
 import { pickup } from './routes/pickup.ts';
 import { features } from './routes/features.ts';
+import { inventory } from './routes/inventory.ts';
 import { connectMongo, closeMongo, mongoDb } from './db/mongodb.ts';
 import { rateLimit } from './middleware/rateLimit.ts';
 
@@ -39,6 +40,7 @@ app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 240 }));
 app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: 30 }), auth);
 app.use('/api/onboarding', rateLimit({ windowMs: 15 * 60 * 1000, max: 12 }), onboarding);
 app.use('/api/shopkeeper-portal', rateLimit({ windowMs: 60 * 1000, max: 120 }), shopkeeperPortal);
+app.use('/api', inventory);
 app.use('/api', api);
 app.use('/api/bootstrap', bootstrap);
 app.use('/api/customer', customer);
