@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { addresses, deliverySlots, orders, payments, products, shops, users } from '../store/memoryStore.ts';
-import type { Address, Payment } from '../models/catalog.ts';
+import type { Address, Offer, Payment } from '../models/catalog.ts';
 import type { OrderStatus } from '../models/domain.ts';
 import { requireAuth } from '../auth/middleware.ts';
 import { listProducts, listShops, listAddresses, insertAddress, listDeliverySlots, createOrderTransaction, cancelOrderTransaction, findOrders, findUserById, updateOrderStatus } from '../db/repositories.ts';
@@ -75,11 +75,13 @@ api.get('/orders', requireAuth, async (req, res) => {
 
 api.post('/orders', requireAuth, async (req, res) => {
   const { shopId, items, paymentMethod = 'COD', addressId, deliverySlotId } = req.body ?? {};
+  const couponCode = typeof req.body?.couponCode === 'string' ? req.body.couponCode.trim().toUpperCase() : '';
   const idempotencyKey = req.headers['idempotency-key']?.trim();
   if (req.user?.role !== 'customer') return res.status(403).json({ error: 'Only customers can place orders' });
   if (typeof shopId !== 'string' || !shopId.trim() || !Array.isArray(items) || !items.length || items.length > 100 || typeof addressId !== 'string' || typeof deliverySlotId !== 'string') return res.status(400).json({ error: 'shopId, 1-100 items, addressId and deliverySlotId are required' });
   if (idempotencyKey && (idempotencyKey.length < 16 || idempotencyKey.length > 128)) return res.status(400).json({ error: 'Idempotency-Key must be between 16 and 128 characters' });
   if (!['UPI', 'CARD', 'COD'].includes(paymentMethod)) return res.status(400).json({ error: 'Invalid payment method' });
+  if (couponCode && !/^[A-Z0-9_-]{2,64}$/.test(couponCode)) return res.status(400).json({ error: 'Invalid coupon code' });
   const normalizedInput = items.map((raw: unknown) => {
     const item = raw as { productId?: unknown; quantity?: unknown };
     const productId = typeof item.productId === 'string' ? item.productId.trim() : '';
@@ -101,15 +103,28 @@ api.post('/orders', requireAuth, async (req, res) => {
     const address = await db.collection<Address>('addresses').findOne({ id: addressId, userId: req.user.id });
     if (!address) return res.status(400).json({ error: 'Valid delivery address is required' });
     const orderId = `FC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const orderItems = normalizedInput.map(item => ({ productId: item.productId, name: '', quantity: item.quantity, unitPrice: 0 }));
-    const order = { id: orderId, customerId: req.user.id, shopId: shopId.trim(), items: orderItems, subtotal: 0, deliveryFee: 0, total: 0, paymentMethod: paymentMethod as 'UPI' | 'CARD' | 'COD', status: 'PLACED' as const, createdAt: new Date().toISOString(), addressId: address.id, deliverySlotId, ...(idempotencyKey ? { idempotencyKey } : {}) };
-    const dbProducts = await db.collection<import('../models/domain').Product>('products').find({ id: { $in: normalizedInput.map(item => item.productId) }, shopId: order.shopId, active: true }).toArray();
+    const dbProducts = await db.collection<import('../models/domain').Product>('products').find({ id: { $in: normalizedInput.map(item => item.productId) }, shopId: shopId.trim(), active: true }).toArray();
     if (dbProducts.length !== normalizedInput.length) return res.status(400).json({ error: 'One or more products are unavailable' });
     const orderProductMap = new Map(dbProducts.map(product => [product.id, product]));
     const completeItems = normalizedInput.map(item => { const product = orderProductMap.get(item.productId)!; return { productId: product.id, name: product.name, quantity: item.quantity, unitPrice: product.sellingPrice }; });
     const subtotal = completeItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-    const deliveryFee = subtotal >= 499 ? 0 : 39;
-    order.items = completeItems; order.subtotal = subtotal; order.deliveryFee = deliveryFee; order.total = subtotal + deliveryFee;
+    const settings = await db.collection('shopSettings').findOne<{ shopId:string; delivery?:{freeDeliveryMinimum?:number;deliveryFee?:number} }>({ shopId: shopId.trim() });
+    const freeDeliveryMinimum = Number.isFinite(Number(settings?.delivery?.freeDeliveryMinimum)) ? Math.max(0, Number(settings!.delivery!.freeDeliveryMinimum)) : 499;
+    const configuredDeliveryFee = Number.isFinite(Number(settings?.delivery?.deliveryFee)) ? Math.max(0, Number(settings!.delivery!.deliveryFee)) : 39;
+    let discount = 0;
+    let appliedOffer: Offer | undefined;
+    if (couponCode) {
+      const now = new Date().toISOString();
+      appliedOffer = await db.collection<Offer>('offers').findOne({ code: couponCode, active: true, startsAt: { $lte: now }, endsAt: { $gte: now } });
+      if (!appliedOffer) return res.status(400).json({ error: 'Coupon is invalid or expired' });
+      if (subtotal < appliedOffer.minOrderValue) return res.status(400).json({ error: `Minimum order value for this coupon is ₹${appliedOffer.minOrderValue}` });
+      discount = appliedOffer.discountType === 'PERCENT' ? subtotal * (appliedOffer.discountValue / 100) : appliedOffer.discountValue;
+      if (appliedOffer.maxDiscount != null) discount = Math.min(discount, appliedOffer.maxDiscount);
+      discount = Math.min(Math.max(0, discount), subtotal);
+    }
+    const discountedSubtotal = Math.max(0, subtotal - discount);
+    const deliveryFee = discountedSubtotal >= freeDeliveryMinimum ? 0 : configuredDeliveryFee;
+    const order = { id: orderId, customerId: req.user.id, shopId: shopId.trim(), items: completeItems, subtotal, discount, couponCode: appliedOffer?.code, deliveryFee, total: discountedSubtotal + deliveryFee, paymentMethod: paymentMethod as 'UPI' | 'CARD' | 'COD', status: 'PLACED' as const, createdAt: new Date().toISOString(), addressId: address.id, deliverySlotId, ...(idempotencyKey ? { idempotencyKey } : {}) };
     const payment: Payment = { id: `pay-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, orderId: order.id, method: order.paymentMethod, status: 'PENDING', amount: order.total, provider: order.paymentMethod === 'COD' ? undefined : 'pending', createdAt: new Date().toISOString() };
     try {
       const result = await createOrderTransaction(order, payment, normalizedInput, deliverySlotId);
@@ -129,8 +144,11 @@ api.post('/orders', requireAuth, async (req, res) => {
   const normalizedItems = normalizedInput.map(item => { const product = products.find(p => p.id === item.productId && p.active && p.shopId === shopId); if (!product || product.stock < item.quantity) return null; return { product, quantity: item.quantity }; });
   if (normalizedItems.some(item => item === null)) return res.status(400).json({ error: 'One or more products are unavailable or have insufficient stock' });
   const orderItems = normalizedItems.map(item => ({ productId: item!.product.id, name: item!.product.name, quantity: item!.quantity, unitPrice: item!.product.sellingPrice }));
-  const subtotal = orderItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0); const deliveryFee = subtotal >= 499 ? 0 : 39;
-  const order = { id: `FC-${Date.now()}-${orders.length}`, customerId: req.user.id, shopId, items: orderItems, subtotal, deliveryFee, total: subtotal + deliveryFee, paymentMethod: paymentMethod as 'UPI' | 'CARD' | 'COD', status: 'PLACED' as const, createdAt: new Date().toISOString(), addressId, deliverySlotId };
+  const subtotal = orderItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const deliveryFee = subtotal >= 499 ? 0 : 39;
+  let discount = 0;
+  if (couponCode) return res.status(503).json({ error: 'Coupons require persistent MongoDB checkout; please try again shortly' });
+  const order = { id: `FC-${Date.now()}-${orders.length}`, customerId: req.user.id, shopId, items: orderItems, subtotal, discount, total: subtotal + deliveryFee, deliveryFee, paymentMethod: paymentMethod as 'UPI' | 'CARD' | 'COD', status: 'PLACED' as const, createdAt: new Date().toISOString(), addressId, deliverySlotId };
   orderItems.forEach(item => { const product = products.find(p => p.id === item.productId); if (product) product.stock -= item.quantity; }); slot.booked += 1; orders.unshift(order);
   const payment: Payment = { id: `pay-${Date.now()}`, orderId: order.id, method: order.paymentMethod, status: 'PENDING', amount: order.total, provider: order.paymentMethod === 'COD' ? undefined : 'pending', createdAt: new Date().toISOString() }; payments.push(payment);
   return res.status(201).json({ ...order, address, deliverySlot: slot, payment });
