@@ -16,6 +16,7 @@ import { onboarding } from './routes/onboarding.ts';
 import { pickup } from './routes/pickup.ts';
 import { features } from './routes/features.ts';
 import { inventory } from './routes/inventory.ts';
+import { orderCancellation } from './routes/orderCancellation.ts';
 import { connectMongo, closeMongo, mongoDb } from './db/mongodb.ts';
 import { rateLimit } from './middleware/rateLimit.ts';
 
@@ -23,7 +24,6 @@ export const app = express();
 const port = Number(process.env.PORT ?? 4000);
 const isProduction = process.env.NODE_ENV === 'production';
 const clientOrigin = process.env.CLIENT_ORIGIN;
-
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 const allowedOrigins = clientOrigin?.split(',').map(origin => origin.trim()).filter(Boolean) ?? [];
@@ -41,6 +41,7 @@ app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: 30 }), auth);
 app.use('/api/onboarding', rateLimit({ windowMs: 15 * 60 * 1000, max: 12 }), onboarding);
 app.use('/api/shopkeeper-portal', rateLimit({ windowMs: 60 * 1000, max: 120 }), shopkeeperPortal);
 app.use('/api', inventory);
+app.use('/api', orderCancellation);
 app.use('/api', api);
 app.use('/api/bootstrap', bootstrap);
 app.use('/api/customer', customer);
@@ -56,11 +57,5 @@ app.use(express.static(frontendDist, { index: 'index.html', maxAge: isProduction
 app.get(/^(?!\/api(?:\/|$)).*/, (_req, res, next) => res.sendFile(path.join(frontendDist, 'index.html'), error => error && next(error)));
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
 app.use((error: unknown, _req, res, _next: express.NextFunction) => { console.error(error); res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' }); });
-async function start() {
-  if (isProduction) { if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length < 32) throw new Error('JWT_SECRET with at least 32 characters is required in production'); if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI is required in production'); if (!process.env.CLIENT_ORIGIN) throw new Error('CLIENT_ORIGIN is required in production'); }
-  try { const db = await connectMongo(); if (db) console.log(`FreshCart MongoDB connected: ${db.databaseName}`); else if (isProduction) throw new Error('MongoDB did not initialize in production'); } catch (error) { console.error('MongoDB connection failed:', error); if (isProduction) throw error; }
-  const server = app.listen(port, () => console.log(`FreshCart API listening on port ${port}`));
-  const shutdown = async () => { server.close(async () => { await closeMongo(); process.exit(0); }); };
-  process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown);
-}
+async function start() { if (isProduction) { if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length < 32) throw new Error('JWT_SECRET with at least 32 characters is required in production'); if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI is required in production'); if (!process.env.CLIENT_ORIGIN) throw new Error('CLIENT_ORIGIN is required in production'); } try { const db = await connectMongo(); if (db) console.log(`FreshCart MongoDB connected: ${db.databaseName}`); else if (isProduction) throw new Error('MongoDB did not initialize in production'); } catch (error) { console.error('MongoDB connection failed:', error); if (isProduction) throw error; } const server = app.listen(port, () => console.log(`FreshCart API listening on port ${port}`)); const shutdown = async () => { server.close(async () => { await closeMongo(); process.exit(0); }); }; process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown); }
 if (!process.env.VERCEL) void start();
