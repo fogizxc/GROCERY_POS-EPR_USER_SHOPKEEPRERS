@@ -14,6 +14,11 @@ export const admin = Router();
 admin.use(requireAuth, requireRole('admin', 'super_admin'));
 admin.use('/catalog', adminCatalog);
 
+const requireSuperAdmin = (req: any, res: any, next: any) => {
+  if (req.user?.role !== 'super_admin') return res.status(403).json({ error: 'Super admin access required' });
+  return next();
+};
+
 admin.get('/dashboard', async (_req, res) => {
   if (mongoDb()) {
     const db = mongoDb()!;
@@ -22,6 +27,63 @@ admin.get('/dashboard', async (_req, res) => {
     return res.json({ revenue: delivered.reduce((sum, order) => sum + order.total, 0), activeOrders: allOrders.filter(o => !['DELIVERED', 'CANCELLED'].includes(o.status)).length, products: allProducts.length, lowStock: allProducts.filter(p => p.stock <= p.minStock).length, shops: allShops.length, staff: staff.length });
   }
   const activeOrders = orders.filter(o => !['DELIVERED', 'CANCELLED'].includes(o.status)); const revenue = orders.filter(o => o.status === 'DELIVERED').reduce((s, o) => s + o.total, 0); return res.json({ revenue, activeOrders: activeOrders.length, products: products.length, lowStock: products.filter(p => p.stock <= p.minStock).length, shops: shops.filter(s => s.active).length, staff: users.filter(u => u.active && u.role !== 'customer').length });
+});
+
+admin.get('/super-dashboard', requireSuperAdmin, async (_req, res) => {
+  const db = mongoDb();
+  if (!db) return res.status(503).json({ error: 'MongoDB is required for super admin analytics' });
+  const [allOrders, allShops, allProducts, allStaff, pendingApplications] = await Promise.all([
+    db.collection<import('../models/domain').Order>('orders').find({}).toArray(),
+    db.collection<import('../models/domain').Shop>('shops').find({}).toArray(),
+    db.collection<import('../models/domain').Product>('products').find({}).toArray(),
+    db.collection<User>('users').find({ role: { $in: ['shopkeeper', 'employee', 'store_manager'] }, active: true }).project({ passwordHash: 0 }).toArray(),
+    db.collection('onboardingApplications').countDocuments({ status: 'PENDING_REVIEW' }),
+  ]);
+  const delivered = allOrders.filter(order => order.status === 'DELIVERED');
+  const revenue = delivered.reduce((sum, order) => sum + order.total, 0);
+  const productMap = new Map(allProducts.map(product => [product.id, product]));
+  let cost = 0;
+  for (const order of delivered) for (const item of order.items) cost += (productMap.get(item.productId)?.costPrice ?? productMap.get(item.productId)?.sellingPrice ?? item.unitPrice) * item.quantity;
+  const profit = revenue - cost;
+  const shopsById = new Map(allShops.map(shop => [shop.id, shop]));
+  const shopStats = new Map<string, { shopId: string; shopName: string; sales: number; orders: number; profit: number; units: number }>();
+  for (const order of delivered) {
+    const current = shopStats.get(order.shopId) ?? { shopId: order.shopId, shopName: shopsById.get(order.shopId)?.name ?? order.shopId, sales: 0, orders: 0, profit: 0, units: 0 };
+    current.sales += order.total; current.orders += 1;
+    for (const item of order.items) { current.units += item.quantity; current.profit += (item.unitPrice - (productMap.get(item.productId)?.costPrice ?? productMap.get(item.productId)?.sellingPrice ?? item.unitPrice)) * item.quantity; }
+    shopStats.set(order.shopId, current);
+  }
+  const topShops = [...shopStats.values()].map(item => ({ ...item, margin: item.sales ? (item.profit / item.sales) * 100 : 0 })).sort((a,b) => b.sales-a.sales);
+  const byMonth = new Map<string, { month: string; sales: number; profit: number; orders: number }>();
+  for (const order of delivered) {
+    const month = order.createdAt.slice(0, 7);
+    const row = byMonth.get(month) ?? { month, sales: 0, profit: 0, orders: 0 };
+    row.sales += order.total; row.orders += 1;
+    for (const item of order.items) row.profit += (item.unitPrice - (productMap.get(item.productId)?.costPrice ?? productMap.get(item.productId)?.sellingPrice ?? item.unitPrice)) * item.quantity;
+    byMonth.set(month, row);
+  }
+  return res.json({
+    totals: { sales: revenue, profit, margin: revenue ? (profit / revenue) * 100 : 0, orders: delivered.length, units: delivered.reduce((sum,o)=>sum+o.items.reduce((s,i)=>s+i.quantity,0),0), shops: allShops.filter(s=>s.active).length, staff: allStaff.length, pendingApplications },
+    topShops: topShops.slice(0, 20),
+    monthly: [...byMonth.values()].sort((a,b)=>a.month.localeCompare(b.month)).slice(-12),
+  });
+});
+
+admin.get('/super-dashboard/applications', requireSuperAdmin, async (req, res) => {
+  const db = mongoDb(); if (!db) return res.status(503).json({ error: 'MongoDB is required for onboarding approvals' });
+  const status = typeof req.query.status === 'string' ? req.query.status : 'PENDING_REVIEW';
+  const type = typeof req.query.type === 'string' && ['shopkeeper','employee'].includes(req.query.type) ? req.query.type as PartnerApplicationType : undefined;
+  const applications = await db.collection('onboardingApplications').find({ ...(type ? { type } : {}), ...(status ? { status } : {}) }).sort({ submittedAt: -1 }).limit(200).toArray();
+  return res.json(applications);
+});
+
+admin.patch('/super-dashboard/applications/:referenceId', requireSuperAdmin, async (req, res) => {
+  const db = mongoDb(); if (!db) return res.status(503).json({ error: 'MongoDB is required for onboarding approvals' });
+  const status = req.body?.status;
+  if (!['APPROVED','REJECTED'].includes(status)) return res.status(400).json({ error: 'Status must be APPROVED or REJECTED' });
+  const updated = await db.collection('onboardingApplications').findOneAndUpdate({ referenceId: req.params.referenceId, status: 'PENDING_REVIEW' }, { $set: { status, reviewedBy: req.user!.id, reviewedAt: new Date().toISOString() } }, { returnDocument: 'after' });
+  if (!updated) return res.status(404).json({ error: 'Pending application not found' });
+  return res.json(updated);
 });
 
 admin.get('/products', async (_req, res) => { if (mongoDb()) return res.json(await mongoDb()!.collection<import('../models/domain').Product>('products').find({}).toArray()); return res.json(products); });
