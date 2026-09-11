@@ -1,0 +1,110 @@
+import { Router } from 'express';
+import crypto from 'node:crypto';
+import { requireAuth } from '../auth/middleware.ts';
+import { mongoDb } from '../db/mongodb.ts';
+import { shops, products, orders, payments, users } from '../store/memoryStore.ts';
+import type { Product, Shop, Order, User } from '../models/domain.ts';
+import type { Payment } from '../models/catalog.ts';
+
+export const pickup = Router();
+
+// Customers can discover a trusted shop by either shop name or shopkeeper name.
+pickup.get('/shops/search', async (req, res) => {
+  const q = String(req.query.q ?? '').trim().toLowerCase();
+  if (q.length < 2) return res.json([]);
+  if (mongoDb()) {
+    const db = mongoDb()!;
+    const foundShops = await db.collection<Shop>('shops').find({ active: true, name: { $regex: q, $options: 'i' } }).limit(20).toArray();
+    const foundOwners = await db.collection<User>('users').find({ active: true, role: 'shopkeeper', name: { $regex: q, $options: 'i' } }).limit(20).toArray();
+    const byId = new Map<string, { shop: Shop; shopkeeper?: { id: string; name: string; username?: string } }>();
+    for (const shop of foundShops) byId.set(shop.id, { shop });
+    for (const owner of foundOwners) {
+      if (!owner.shopId) continue;
+      const shop = await db.collection<Shop>('shops').findOne({ id: owner.shopId, active: true });
+      if (shop) byId.set(shop.id, { shop, shopkeeper: { id: owner.id, name: owner.name, username: owner.username } });
+    }
+    const results = [];
+    for (const item of byId.values()) {
+      if (!item.shopkeeper) {
+        const owner = await db.collection<User>('users').findOne({ shopId: item.shop.id, role: 'shopkeeper', active: true });
+        if (owner) item.shopkeeper = { id: owner.id, name: owner.name, username: owner.username };
+      }
+      results.push({ ...item.shop, shopkeeper: item.shopkeeper });
+    }
+    return res.json(results);
+  }
+  const matches = shops.filter(s => s.active && s.name.toLowerCase().includes(q)).map(shop => ({ ...shop, shopkeeper: users.find(u => u.shopId === shop.id && u.role === 'shopkeeper' && u.active) })).filter(Boolean);
+  const ownerMatches = users.filter(u => u.active && u.role === 'shopkeeper' && u.name.toLowerCase().includes(q)).map(owner => shops.find(s => s.id === owner.shopId && s.active) ? ({ ...shops.find(s => s.id === owner.shopId)!, shopkeeper: owner }) : null).filter(Boolean);
+  const merged = new Map(matches.concat(ownerMatches as any).map((item: any) => [item.id, { ...item, shopkeeper: item.shopkeeper ? { id: item.shopkeeper.id, name: item.shopkeeper.name, username: item.shopkeeper.username } : undefined }]));
+  return res.json([...merged.values()]);
+});
+
+pickup.get('/shops/:shopId/products', async (req, res) => {
+  const shopId = String(req.params.shopId);
+  if (mongoDb()) return res.json(await mongoDb()!.collection<Product>('products').find({ shopId, active: true }).sort({ name: 1 }).toArray());
+  return res.json(products.filter(p => p.shopId === shopId && p.active));
+});
+
+const pickupCode = () => crypto.randomInt(100000, 1000000).toString();
+
+pickup.post('/orders', requireAuth, async (req, res) => {
+  if (req.user?.role !== 'customer') return res.status(403).json({ error: 'Only customers can place pickup orders' });
+  const shopId = String(req.body?.shopId ?? '').trim();
+  const items = Array.isArray(req.body?.items) ? req.body.items : [];
+  const paymentMethod = req.body?.paymentMethod === 'PAY_AT_SHOP' ? 'PAY_AT_SHOP' : req.body?.paymentMethod;
+  if (!shopId || !items.length || !['PAY_AT_SHOP', 'UPI', 'CARD'].includes(paymentMethod)) return res.status(400).json({ error: 'shopId, items and a valid pickup payment method are required' });
+  if (mongoDb()) {
+    const db = mongoDb()!;
+    const shop = await db.collection<Shop>('shops').findOne({ id: shopId, active: true });
+    if (!shop) return res.status(404).json({ error: 'Shop not found' });
+    const ids = items.map((x: any) => String(x?.productId ?? ''));
+    const dbProducts = await db.collection<Product>('products').find({ id: { $in: ids }, shopId, active: true }).toArray();
+    if (dbProducts.length !== ids.length || new Set(ids).size !== ids.length) return res.status(400).json({ error: 'One or more products are unavailable at this shop' });
+    const map = new Map(dbProducts.map(p => [p.id, p]));
+    const orderItems = items.map((x: any) => { const p = map.get(String(x.productId))!; const quantity = Number(x.quantity); return { productId: p.id, name: p.name, quantity, unitPrice: p.sellingPrice }; });
+    if (orderItems.some(x => !Number.isInteger(x.quantity) || x.quantity < 1 || x.quantity > 100 || map.get(x.productId)!.stock < x.quantity)) return res.status(400).json({ error: 'Invalid quantity or insufficient stock' });
+    const subtotal = orderItems.reduce((sum, x) => sum + x.quantity * x.unitPrice, 0);
+    const order: Order = { id: `FC-PU-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, customerId: req.user.id, shopId, items: orderItems, subtotal, deliveryFee: 0, total: subtotal, paymentMethod, fulfilment: 'SELF_PICKUP', status: 'PLACED', createdAt: new Date().toISOString(), pickupCode: pickupCode() };
+    const payment: Payment = { id: `pay-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`, orderId: order.id, method: paymentMethod, status: 'PENDING', amount: order.total, provider: paymentMethod === 'PAY_AT_SHOP' ? 'shop-counter' : 'pending', createdAt: new Date().toISOString() };
+    try {
+      await db.collection<Order>('orders').insertOne(order);
+      await db.collection<Payment>('payments').insertOne(payment);
+      for (const item of orderItems) await db.collection<Product>('products').updateOne({ id: item.productId, shopId, active: true, stock: { $gte: item.quantity } }, { $inc: { stock: -item.quantity } });
+      return res.status(201).json({ ...order, payment, shop });
+    } catch (error) {
+      await db.collection<Order>('orders').deleteOne({ id: order.id });
+      await db.collection<Payment>('payments').deleteOne({ id: payment.id });
+      return res.status(400).json({ error: error instanceof Error ? error.message : 'Unable to create pickup order' });
+    }
+  }
+  const shop = shops.find(s => s.id === shopId && s.active); if (!shop) return res.status(404).json({ error: 'Shop not found' });
+  const orderItems = items.map((x: any) => { const p = products.find(p => p.id === String(x.productId) && p.shopId === shopId && p.active); const quantity = Number(x.quantity); return p && Number.isInteger(quantity) && quantity > 0 && p.stock >= quantity ? { productId: p.id, name: p.name, quantity, unitPrice: p.sellingPrice } : null; });
+  if (orderItems.some(x => !x)) return res.status(400).json({ error: 'One or more products are unavailable or out of stock' });
+  const completeItems = orderItems as any[]; const subtotal = completeItems.reduce((sum, x) => sum + x.quantity * x.unitPrice, 0);
+  const order: any = { id: `FC-PU-${Date.now()}-${orders.length}`, customerId: req.user.id, shopId, items: completeItems, subtotal, deliveryFee: 0, total: subtotal, paymentMethod, fulfilment: 'SELF_PICKUP', status: 'PLACED', createdAt: new Date().toISOString(), pickupCode: pickupCode() };
+  completeItems.forEach(x => { const p = products.find(p => p.id === x.productId); if (p) p.stock -= x.quantity; }); orders.unshift(order);
+  const payment: any = { id: `pay-${Date.now()}`, orderId: order.id, method: paymentMethod, status: 'PENDING', amount: order.total, provider: paymentMethod === 'PAY_AT_SHOP' ? 'shop-counter' : 'pending', createdAt: new Date().toISOString() }; payments.push(payment);
+  return res.status(201).json({ ...order, payment, shop });
+});
+
+// Shopkeeper/employee verifies the customer's pickup code and marks the order collected.
+pickup.post('/orders/:id/collect', requireAuth, async (req, res) => {
+  const code = String(req.body?.pickupCode ?? '').trim();
+  if (!code) return res.status(400).json({ error: 'Pickup code is required' });
+  if (mongoDb()) {
+    const db = mongoDb()!;
+    const order = await db.collection<Order>('orders').findOne({ id: req.params.id, fulfilment: 'SELF_PICKUP' });
+    if (!order) return res.status(404).json({ error: 'Pickup order not found' });
+    if (!['shopkeeper', 'employee', 'store_manager', 'admin', 'super_admin'].includes(req.user?.role ?? '') || (req.user?.shopId && req.user.shopId !== order.shopId)) return res.status(403).json({ error: 'You cannot collect orders for this shop' });
+    if (order.pickupCode !== code) return res.status(400).json({ error: 'Invalid pickup code' });
+    if (order.status !== 'READY') return res.status(409).json({ error: 'Order must be READY before collection' });
+    if (order.paymentMethod === 'PAY_AT_SHOP') await db.collection<Payment>('payments').updateOne({ orderId: order.id }, { $set: { status: 'PAID' } });
+    const result = await db.collection<Order>('orders').findOneAndUpdate({ id: order.id, pickupCode: code, status: 'READY' }, { $set: { status: 'COLLECTED', pickupConfirmedAt: new Date().toISOString() } }, { returnDocument: 'after' });
+    return result.value ? res.json(result.value) : res.status(409).json({ error: 'Pickup order was already collected' });
+  }
+  const order: any = orders.find(o => o.id === req.params.id && o.fulfilment === 'SELF_PICKUP'); if (!order) return res.status(404).json({ error: 'Pickup order not found' });
+  if (!['shopkeeper', 'employee', 'store_manager', 'admin', 'super_admin'].includes(req.user?.role ?? '') || (req.user?.shopId && req.user.shopId !== order.shopId)) return res.status(403).json({ error: 'You cannot collect orders for this shop' });
+  if (order.pickupCode !== code) return res.status(400).json({ error: 'Invalid pickup code' }); if (order.status !== 'READY') return res.status(409).json({ error: 'Order must be READY before collection' });
+  order.status = 'COLLECTED'; order.pickupConfirmedAt = new Date().toISOString(); if (order.paymentMethod === 'PAY_AT_SHOP') { const p: any = payments.find(p => p.orderId === order.id); if (p) p.status = 'PAID'; }
+  return res.json(order);
+});
