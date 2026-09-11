@@ -16,7 +16,7 @@ export interface Offer { id: string; code: string; title: string; description: s
 export interface Payment {
   id: string;
   orderId: string;
-  method: 'UPI' | 'CARD' | 'COD';
+  method: 'UPI' | 'CARD' | 'COD' | 'PAY_AT_SHOP';
   status: 'PENDING' | 'AUTHORIZED' | 'PAID' | 'FAILED' | 'REFUND_PENDING' | 'REFUNDED' | 'CANCELLED';
   amount: number;
   provider?: string;
