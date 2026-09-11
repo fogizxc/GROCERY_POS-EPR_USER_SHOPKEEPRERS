@@ -20,9 +20,19 @@ async function ensureAdminAccount(database: Db) {
     if (!['admin', 'super_admin'].includes(existing.role)) {
       throw new Error('ADMIN_LOGIN_ID is already used by a non-admin account');
     }
-    if (!existing.active) {
-      await database.collection<User>('users').updateOne({ id: existing.id }, { $set: { active: true } });
-    }
+
+    // Keep the owner credentials in sync with the deployment environment.
+    // This fixes the case where the admin account was created with an older
+    // password and ADMIN_LOGIN_PASSWORD was later changed in .env/Vercel.
+    await database.collection<User>('users').updateOne(
+      { id: existing.id },
+      {
+        $set: {
+          active: true,
+          passwordHash: hashPassword(password),
+        },
+      },
+    );
     return;
   }
 
