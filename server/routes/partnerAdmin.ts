@@ -52,8 +52,10 @@ partnerAdmin.post('/create', async (req, res) => {
   if (!/^\d{4,10}$/.test(postalCode)) return res.status(400).json({ error: 'Enter a valid postal code' });
   if (kind === 'shopkeeper' && !businessName) return res.status(400).json({ error: 'Shop name is required for a shopkeeper' });
 
-  const existing = await db.collection<User>('users').findOne({ $or: [{ email }, { phone }], active: true });
-  if (existing) return res.status(409).json({ error: 'An active account already exists with this email or phone number' });
+  // Phone number is the only contact field that must be unique for partner accounts.
+  // Names and email addresses may be shared by different employees/shopkeepers.
+  const existing = await db.collection<User>('users').findOne({ phone, active: true });
+  if (existing) return res.status(409).json({ error: 'An active account already exists with this phone number' });
 
   const username = await uniqueUsername(kind === 'shopkeeper' ? 'FC-SHOP-' : 'FC-EMP-', db);
   const password = randomPassword();
