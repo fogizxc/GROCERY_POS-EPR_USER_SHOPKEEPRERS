@@ -9,10 +9,12 @@ import { approveSalesImport, rejectSalesImport } from './onboarding';
 import type { PartnerApplicationType } from './onboarding';
 import type { SalesImport, User } from '../models/domain';
 import { ensurePartnerCredentialPools, getPartnerCredentialBase, listPartnerCredentialPool, claimPartnerCredential } from '../auth/shopCredentials';
+import { partnerAdmin } from './partnerAdmin';
 
 export const admin = Router();
 admin.use(requireAuth, requireRole('admin', 'super_admin'));
 admin.use('/catalog', adminCatalog);
+admin.use('/partners', partnerAdmin);
 const requireSuperAdmin = (req: any, res: any, next: any) => req.user?.role !== 'super_admin' ? res.status(403).json({ error: 'Super admin access required' }) : next();
 
 admin.get('/dashboard', async (_req, res) => {
