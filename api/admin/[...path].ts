@@ -16,15 +16,19 @@ export default async function handler(req: Request, res: Response) {
     await mongoReady;
 
     const originalUrl = req.url || '/';
+    // The Express router is mounted directly here, so it expects paths such as
+    // /dashboard and /super-dashboard rather than the public /api/admin prefix.
     const adminPath = originalUrl.startsWith('/api/admin/')
-      ? originalUrl.slice('/api'.length)
+      ? originalUrl.slice('/api/admin'.length)
       : originalUrl.startsWith('/admin/')
-        ? originalUrl
-        : originalUrl.startsWith('/')
-          ? `/admin${originalUrl}`
-          : `/admin/${originalUrl}`;
+        ? originalUrl.slice('/admin'.length)
+        : originalUrl.startsWith('/api/')
+          ? originalUrl.slice('/api'.length)
+          : originalUrl.startsWith('/')
+            ? originalUrl
+            : `/${originalUrl}`;
 
-    req.url = adminPath || '/admin';
+    req.url = adminPath || '/';
     res.setHeader('Cache-Control', 'no-store');
     return admin(req, res, (() => res.status(404).json({ error: 'Admin route not found' })) as NextFunction);
   } catch (error) {
