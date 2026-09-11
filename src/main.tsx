@@ -49,23 +49,18 @@ function AppGate() {
       <AuthScreen
         onAuthenticated={() => {
           const role = readRoleFromToken();
-
-          // Super Admin always gets the dedicated Super Admin portal,
-          // regardless of whether login started from / or /super-admin.
           if (role === 'super_admin') {
             localStorage.setItem('freshcart_role', role);
             redirectToSuperAdmin();
             window.location.reload();
             return;
           }
-
           if (isSuperPortal) {
             localStorage.removeItem('freshcart_token');
             localStorage.removeItem('freshcart_role');
             window.location.reload();
             return;
           }
-
           localStorage.setItem('freshcart_role', role);
           setAuthenticated(true);
         }}
@@ -81,15 +76,17 @@ function AppGate() {
       window.location.reload();
       return null;
     }
-
     return (
-      <SuperAdminPortal
-        onLogout={() => {
-          localStorage.removeItem('freshcart_token');
-          localStorage.removeItem('freshcart_role');
-          setAuthenticated(false);
-        }}
-      />
+      <>
+        <SuperAdminPortal
+          onLogout={() => {
+            localStorage.removeItem('freshcart_token');
+            localStorage.removeItem('freshcart_role');
+            setAuthenticated(false);
+          }}
+        />
+        <PartnerCredentialManager embedded />
+      </>
     );
   }
 
