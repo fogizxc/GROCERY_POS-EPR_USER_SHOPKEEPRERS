@@ -13,6 +13,7 @@ import { delivery } from './routes/delivery.ts';
 import { ops } from './routes/ops.ts';
 import { paymentsRouter, paymentWebhook } from './routes/payments.ts';
 import { onboarding } from './routes/onboarding.ts';
+import { pickup } from './routes/pickup.ts';
 import { connectMongo, closeMongo, mongoDb } from './db/mongodb.ts';
 import { rateLimit } from './middleware/rateLimit.ts';
 
@@ -33,12 +34,9 @@ app.get('/api', (_req, res) => res.status(200).json({ ok: true, service: 'freshc
 app.get('/ready', (_req, res) => { const ready = Boolean(mongoDb()); return res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready', database: ready ? 'connected' : 'disconnected' }); });
 app.get('/api/config', (_req, res) => res.json({ databaseConfigured: Boolean(process.env.MONGODB_URI), environment: process.env.NODE_ENV ?? 'development' }));
 
-// MongoDB is opportunistic on Vercel. A database outage must not prevent
-// authentication or dashboard routes that have safe fallback behavior.
 app.use(async (_req, _res, next) => {
   if (!process.env.VERCEL || mongoDb()) return next();
-  try { await connectMongo(); }
-  catch (error) { console.error('MongoDB request initialization failed:', error); }
+  try { await connectMongo(); } catch (error) { console.error('MongoDB request initialization failed:', error); }
   next();
 });
 
@@ -54,6 +52,7 @@ app.use('/api/shopkeeper', shopkeeper);
 app.use('/api/delivery', delivery);
 app.use('/api/ops', ops);
 app.use('/api/payments', paymentsRouter);
+app.use('/api/pickup', pickup);
 
 const frontendDist = path.resolve(process.cwd(), 'dist');
 app.use(express.static(frontendDist, { index: 'index.html', maxAge: isProduction ? '1d' : 0 }));
