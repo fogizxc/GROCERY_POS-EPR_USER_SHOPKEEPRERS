@@ -9,7 +9,7 @@ import { SuperAdminPortal } from './components/SuperAdminPortal';
 import { SuperAdminAccounts } from './components/SuperAdminAccounts';
 import './index.css';
 
-type SessionRole = 'customer' | 'shopkeeper' | 'employee' | 'admin' | 'super_admin';
+type SessionRole = 'customer' | 'shopkeeper' | 'employee' | 'store_manager' | 'admin' | 'super_admin';
 
 function readRoleFromToken(): SessionRole {
   const token = localStorage.getItem('freshcart_token');
@@ -17,7 +17,7 @@ function readRoleFromToken(): SessionRole {
   try {
     const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { role?: string };
     const role = payload.role;
-    if (role === 'shopkeeper' || role === 'employee' || role === 'admin' || role === 'super_admin') return role;
+    if (role === 'shopkeeper' || role === 'employee' || role === 'store_manager' || role === 'admin' || role === 'super_admin') return role;
     return 'customer';
   } catch { return 'customer'; }
 }
