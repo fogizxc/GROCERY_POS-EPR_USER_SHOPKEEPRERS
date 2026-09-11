@@ -47,7 +47,16 @@ export async function connectMongo() {
       await nextClient.connect();
       const nextDb = nextClient.db(process.env.MONGODB_DB || 'freshcart');
       await ensureIndexes(nextClient);
-      await ensureAdminAccount(nextDb);
+
+      // A bad super-admin bootstrap credential must not make an otherwise
+      // healthy MongoDB connection unusable. The owner login has a separate
+      // environment-backed fallback, while partner data must use MongoDB.
+      try {
+        await ensureAdminAccount(nextDb);
+      } catch (error) {
+        console.error('FreshCart super-admin bootstrap skipped:', error);
+      }
+
       client = nextClient;
       db = nextDb;
       return nextDb;
