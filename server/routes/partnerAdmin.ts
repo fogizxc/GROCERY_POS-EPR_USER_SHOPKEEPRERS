@@ -23,7 +23,7 @@ const randomPassword = () => {
 
 async function uniqueUsername(prefix: string, db: NonNullable<ReturnType<typeof mongoDb>>) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const username = randomId(prefix);
+    const username = randomId(prefix).toUpperCase();
     if (!(await db.collection<User>('users').findOne({ username }))) return username;
   }
   throw new Error('Unable to generate a unique login ID');
@@ -55,7 +55,7 @@ partnerAdmin.post('/create', async (req, res) => {
   const existing = await db.collection<User>('users').findOne({ $or: [{ email }, { phone }], active: true });
   if (existing) return res.status(409).json({ error: 'An active account already exists with this email or phone number' });
 
-  const username = await uniqueUsername(kind === 'shopkeeper' ? 'FC-SHOP-' : 'FC-EMP-');
+  const username = await uniqueUsername(kind === 'shopkeeper' ? 'FC-SHOP-' : 'FC-EMP-', db);
   const password = randomPassword();
   const user: User = {
     id: `u-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
@@ -74,6 +74,10 @@ partnerAdmin.post('/create', async (req, res) => {
       shop = { id: `shop-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, name: businessName, address: `${address}, ${city}, ${state} ${postalCode}`, active: true };
       await db.collection<Shop>('shops').insertOne(shop);
       user.shopId = shop.id;
+    } else if (req.body?.shopId) {
+      const assignedShop = await db.collection<Shop>('shops').findOne({ id: String(req.body.shopId), active: true });
+      if (!assignedShop) return res.status(400).json({ error: 'Selected shop could not be found' });
+      user.shopId = assignedShop.id;
     }
     await createUser(user);
   } catch (error) {
