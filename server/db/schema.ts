@@ -2,8 +2,11 @@ import { MongoClient } from 'mongodb';
 
 export async function ensureIndexes(client: MongoClient) {
   const db = client.db(process.env.MONGODB_DB || 'freshcart');
+  // Phone is the sole unique contact identifier. Email may be shared by
+  // multiple employees/shopkeepers/customers, so keep only a normal index.
+  try { await db.collection('users').dropIndex('email_1'); } catch { /* index may not exist */ }
   await Promise.all([
-    db.collection('users').createIndex({ email: 1 }, { unique: true, sparse: true }),
+    db.collection('users').createIndex({ email: 1 }),
     db.collection('users').createIndex({ phone: 1 }, { unique: true, sparse: true }),
     db.collection('shops').createIndex({ active: 1 }),
     db.collection('products').createIndex({ shopId: 1, category: 1, active: 1 }),
