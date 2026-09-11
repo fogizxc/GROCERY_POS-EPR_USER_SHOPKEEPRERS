@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, type PartnerCredential, type SuperApplication, type SuperDashboard } from '../services/api';
 import { BarChart3, CheckCircle2, Clock3, Copy, KeyRound, LogOut, RefreshCw, ShieldCheck, Store, TrendingUp, Users, XCircle } from 'lucide-react';
 
@@ -69,7 +69,7 @@ export function SuperAdminPortal({ onLogout }:{ onLogout:()=>void }) {
 }
 
 function Brand(){return <div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#d7ef8d] text-[#10251b]"><ShieldCheck size={22}/></div><div><div className="font-black tracking-tight">FreshCart</div><div className="text-[10px] uppercase tracking-[.18em] text-[#8fa49a]">Super Admin</div></div></div>}
-function NavButton({active,onClick,icon,label}:{active:boolean;onClick:()=>void;icon:React.ReactNode;label:string}){return <button onClick={onClick} className={`w-full rounded-2xl px-4 py-3 text-left text-sm font-bold ${active?'bg-[#d7ef8d] text-[#10251b]':'text-[#a9b9b1] hover:bg-white/5'}`}>{icon}<span className="ml-3">{label}</span></button>}
+function NavButton({active,onClick,icon,label}:{active:boolean;onClick:()=>void;icon:ReactNode;label:string}){return <button onClick={onClick} className={`w-full rounded-2xl px-4 py-3 text-left text-sm font-bold ${active?'bg-[#d7ef8d] text-[#10251b]':'text-[#a9b9b1] hover:bg-white/5'}`}>{icon}<span className="ml-3">{label}</span></button>}
 function MobileTab({active,onClick,label}:{active:boolean;onClick:()=>void;label:string}){return <button onClick={onClick} className={`rounded-xl px-3 py-2 text-xs font-bold ${active?'bg-[#d7ef8d] text-[#10251b]':'bg-white/5'}`}>{label}</button>}
 
 function CredentialVault({pool,kind,setKind,loading,refresh,copied,copyValue}:{pool:PartnerCredential[];kind:CredentialKind;setKind:(kind:CredentialKind)=>void;loading:boolean;refresh:()=>void;copied:string;copyValue:(label:string,value:string)=>void}){
