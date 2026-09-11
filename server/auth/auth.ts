@@ -28,14 +28,21 @@ function configuredOwnerAccount(): User | null {
 
 export async function signIn(identifier: string, password?: string): Promise<Session | null> {
   const normalized = identifier.trim().toLowerCase();
-  const matches = await Promise.all(loginRoles.map(role => findUser(normalized, role)));
-  let user = matches.find(Boolean) as User | null;
-  if (!user) user = users.find(u => u.active && (u.email.toLowerCase() === normalized || u.phone === identifier.trim() || (u.username?.toLowerCase() === normalized))) ?? null;
+  let user: User | null = null;
 
-  // Owner credentials are also accepted directly from the server environment.
-  // This makes the dedicated super-admin login resilient if MongoDB has not yet
-  // been initialized on a serverless instance; the normal DB account remains the
-  // source of truth whenever it exists.
+  // Database lookup is best-effort. Owner credentials must remain usable even
+  // when MongoDB is temporarily unavailable on a Vercel serverless instance.
+  try {
+    const matches = await Promise.all(loginRoles.map(role => findUser(normalized, role)));
+    user = (matches.find(Boolean) as User | undefined) ?? null;
+  } catch (error) {
+    console.error('Database account lookup failed during login:', error);
+  }
+
+  if (!user) {
+    user = users.find(u => u.active && (u.email.toLowerCase() === normalized || u.phone === identifier.trim() || (u.username?.toLowerCase() === normalized))) ?? null;
+  }
+
   if (!user) {
     const owner = configuredOwnerAccount();
     if (owner && (owner.email === normalized || owner.phone === identifier.trim() || owner.username === normalized)) {
@@ -59,8 +66,14 @@ export async function getUserFromToken(token?: string) {
   if (!token) return null;
   const claims = verifyToken(token);
   if (!claims) return null;
-  const dbUser = await findUserById(claims.sub);
-  if (dbUser && dbUser.role === claims.role) return { ...dbUser, passwordHash: undefined };
+
+  try {
+    const dbUser = await findUserById(claims.sub);
+    if (dbUser && dbUser.role === claims.role) return { ...dbUser, passwordHash: undefined };
+  } catch (error) {
+    console.error('Database account lookup failed while validating session:', error);
+  }
+
   const user = users.find(u => u.active && u.id === claims.sub && u.role === claims.role);
   if (user) return { ...user, passwordHash: undefined };
 
