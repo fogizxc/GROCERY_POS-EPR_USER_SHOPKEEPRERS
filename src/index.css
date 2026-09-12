@@ -30,3 +30,15 @@ img,svg{max-width:100%}
 @media (max-width:640px){
   [role='dialog']{max-height:calc(100dvh - 1rem);overflow-y:auto}
 }
+
+/* Blinkit-style storefront: the legacy customer feature dashboard must not
+   occupy the shopping homepage. The storefront header and product sections
+   remain the primary customer experience. */
+#root>div>section:first-of-type{display:none}
+
+/* Keep the storefront usable when the desktop search is hidden on smaller
+   screens; avoid clipped header controls and preserve horizontal scrolling. */
+@media (max-width:1023px){
+  #root>div>header>div:first-child{flex-wrap:wrap}
+  #root>div>header>div:first-child>div:first-child{flex-shrink:0}
+}
